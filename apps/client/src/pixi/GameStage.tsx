@@ -112,8 +112,8 @@ export function GameStage() {
         const boardFit = Math.min((W - 160) / board.width, (H * 0.42) / board.height, 1.12)
         const boardTarget = {
           x: W / 2,
-          y: betting ? H - 104 : H - 30,
-          scale: betting ? boardFit : boardFit * 0.72,
+          y: betting ? H - 104 : H - 100,
+          scale: betting ? boardFit : boardFit * 0.62,
           alpha: betting ? 1 : 0.7,
         }
         const wheelRadiusPx = betting ? H * 0.16 : H * 0.27

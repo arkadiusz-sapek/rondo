@@ -28,8 +28,9 @@ function smoothstep(edge0: number, edge1: number, x: number) {
   return t * t * (3 - 2 * t)
 }
 
+/** Shortest signed angular distance, always in [-π, π]. */
 function normalizeAngle(a: number) {
-  return ((a + Math.PI) % (Math.PI * 2)) - Math.PI + (a < -Math.PI ? Math.PI * 2 : 0)
+  return a - Math.PI * 2 * Math.round(a / (Math.PI * 2))
 }
 
 /**
@@ -177,7 +178,7 @@ export class Wheel3D {
         .stroke({ width: 1, color: 0x000000, alpha: 0.4 })
     }
 
-    if (this.target !== null && (this.mode === 'landed' || this.mode === 'landing')) {
+    if (this.target !== null && this.mode === 'landed') {
       const i = WHEEL_NUMBERS.indexOf(this.target as (typeof WHEEL_NUMBERS)[number])
       const a0 = this.rotation + i * STEP - STEP / 2
       const a1 = this.rotation + i * STEP + STEP / 2
@@ -201,11 +202,12 @@ export class Wheel3D {
       const mid = this.rotation + i * STEP
       const pos = this.project(mid, R * LABEL_R)
       label.position.set(pos.x, pos.y)
-      const dx = -Math.sin(mid)
-      const dy = Math.cos(mid) * COS_T
-      label.rotation = Math.atan2(dy, dx) + Math.PI / 2
-      // Foreshortening: pockets on the near side face the camera more.
-      label.scale.set(1, 0.75 + 0.25 * Math.sin(mid) * 0)
+      // Radial orientation from the projected position — rotates evenly with
+      // the rotor instead of "swimming" like the old tangent math did.
+      label.rotation = Math.atan2(pos.y, pos.x) + Math.PI / 2
+      // Depth cue: near-side numbers slightly larger.
+      const depthScale = 0.82 + 0.18 * (Math.sin(mid) + 1) * 0.5
+      label.scale.set(depthScale)
     }
 
     const ballPos = this.project(this.ballAngle, R * ballR, bounce * R)
