@@ -121,6 +121,7 @@ export class Wheel3D {
   private ballShadow = new Graphics()
   private ball = new Graphics()
   private turret = new Container()
+  private turretG = new Graphics()
 
   private mode: Mode = 'idle'
   private rotation = Math.random() * TAU
@@ -161,7 +162,7 @@ export class Wheel3D {
 
     this.drawStator()
     this.drawConeFlat()
-    this.drawTurret()
+    this.turret.addChild(this.turretG)
     this.ball.circle(0, 0, radius * 0.034).fill(0xf7f7f2)
     this.ball.circle(-radius * 0.009, -radius * 0.011, radius * 0.012).fill(0xffffff)
     this.ballShadow.ellipse(0, 0, radius * 0.036, radius * 0.018).fill({ color: 0x000000, alpha: 0.35 })
@@ -246,38 +247,43 @@ export class Wheel3D {
       cap: 'round',
     })
 
-    // Eight diamond deflectors.
+    // Eight diamond deflectors — alternating orientation like real wheels
+    // (half lie along the track, half point down the slope), each a lozenge
+    // with a lit facet, a shaded facet, a ridge line and a contact shadow.
     for (let k = 0; k < 8; k++) {
       const angle = (k * TAU) / 8 + TAU / 16
       const r = R * 0.865
       const dirX = Math.cos(angle)
       const dirY = Math.sin(angle) * COS_T
       const norm = Math.hypot(dirX, dirY)
-      const px = -dirY / norm
-      const py = dirX / norm
+      const radX = dirX / norm
+      const radY = dirY / norm
+      const tanX = -radY
+      const tanY = radX
+      const [longX, longY, shortX, shortY] =
+        k % 2 === 0 ? [tanX, tanY, radX, radY] : [radX, radY, tanX, tanY]
       const c = this.project(angle, r)
-      const len = R * 0.038
-      const wid = R * 0.013
-      g.poly([
-        c.x + (dirX / norm) * len,
-        c.y + (dirY / norm) * len,
-        c.x + px * wid,
-        c.y + py * wid,
-        c.x - (dirX / norm) * len,
-        c.y - (dirY / norm) * len,
-        c.x - px * wid,
-        c.y - py * wid,
-      ])
-        .fill({ color: 0xaeb3bc, alpha: 0.92 })
-        .stroke({ width: 1, color: 0x565b64 })
-      g.poly([
-        c.x + (dirX / norm) * len * 0.5,
-        c.y + (dirY / norm) * len * 0.5,
-        c.x + px * wid * 0.45,
-        c.y + py * wid * 0.45,
-        c.x - (dirX / norm) * len * 0.2,
-        c.y - (dirY / norm) * len * 0.2,
-      ]).fill({ color: 0xffffff, alpha: 0.6 })
+      const len = R * 0.042
+      const wid = R * 0.015
+
+      const tip1 = { x: c.x + longX * len, y: c.y + longY * len }
+      const tip2 = { x: c.x - longX * len, y: c.y - longY * len }
+      const side1 = { x: c.x + shortX * wid, y: c.y + shortY * wid }
+      const side2 = { x: c.x - shortX * wid, y: c.y - shortY * wid }
+
+      g.poly([tip1.x, tip1.y + R * 0.008, side1.x, side1.y + R * 0.008, tip2.x, tip2.y + R * 0.008, side2.x, side2.y + R * 0.008]).fill({
+        color: 0x000000,
+        alpha: 0.28,
+      })
+      // Lit facet (light from top-left) and shaded facet.
+      const litFirst = side1.y < side2.y
+      g.poly([tip1.x, tip1.y, side1.x, side1.y, tip2.x, tip2.y]).fill(litFirst ? 0xd9dde4 : 0x878d97)
+      g.poly([tip1.x, tip1.y, side2.x, side2.y, tip2.x, tip2.y]).fill(litFirst ? 0x878d97 : 0xd9dde4)
+      g.poly([tip1.x, tip1.y, side1.x, side1.y, tip2.x, tip2.y, side2.x, side2.y]).stroke({
+        width: 1,
+        color: 0x50555e,
+      })
+      g.moveTo(tip1.x, tip1.y).lineTo(tip2.x, tip2.y).stroke({ width: 1, color: 0xffffff, alpha: 0.65 })
     }
 
     // Chrome separator between stator and rotor.
@@ -313,56 +319,110 @@ export class Wheel3D {
     g.circle(0, 0, CONE_PX * 0.18).fill({ color: 0xffe9c9, alpha: 0.08 })
   }
 
-  private drawTurret() {
+  /**
+   * The turret is part of the rotor, so it spins. A lathe shape carries no
+   * rotation cue by itself — the spin is sold by: two handles orbiting the
+   * column (passing behind and in front of it), knurling ticks sliding along
+   * the plate rims, and jewel facets turning under a fixed light (with a
+   * glint whenever a facet catches it). Redrawn per frame.
+   */
+  private drawTurretFrame(rotation: number) {
     const R = this.radius
-    const t = new Graphics()
+    const t = this.turretG
+    t.clear()
 
-    /** A lathe step: dark side wall + lit top + front rim catch-light. */
-    const disc = (y: number, rx: number, height: number, wall: number, top: number) => {
+    const disc = (y: number, rx: number, height: number, wall: number, top: number, knurl = false) => {
       const ry = rx * COS_T
       t.ellipse(0, y, rx, ry).fill(wall)
       t.rect(-rx, y - height, rx * 2, height).fill(wall)
-      // Side shading: dark right edge, light left edge (light from top-left).
       t.rect(rx * 0.35, y - height, rx * 0.62, height).fill({ color: 0x000000, alpha: 0.3 })
       t.rect(-rx * 0.92, y - height, rx * 0.35, height).fill({ color: 0xffffff, alpha: 0.09 })
       t.ellipse(0, y - height, rx, ry).fill(top)
       t.ellipse(0, y - height, rx * 0.66, ry * 0.66).fill(darken(top, 0.75))
-      // Front rim catch-light on the top ellipse.
       const rim: number[] = []
       for (let i = 0; i <= 24; i++) {
         const a = Math.PI * 0.15 + (Math.PI * 0.7 * i) / 24
         rim.push(Math.cos(a) * rx, y - height + Math.sin(a) * ry)
       }
       t.poly(rim, false).stroke({ width: 1.2, color: 0xffffff, alpha: 0.28 })
+      if (knurl) {
+        // Ticks around the wall, sliding with the rotor — a strong spin cue.
+        for (let k = 0; k < 18; k++) {
+          const a = rotation + (k * TAU) / 18
+          if (Math.sin(a) <= 0.05) continue
+          const x = Math.cos(a) * rx
+          const depth = Math.sin(a)
+          t.moveTo(x, y - height + ry * depth)
+            .lineTo(x, y - height * 0.15 + ry * depth)
+            .stroke({ width: 1.2, color: 0x000000, alpha: 0.35 * depth })
+        }
+      }
     }
 
-    /** A tapering shaft with three-band cylindrical shading. */
     const shaft = (y0: number, y1: number, r0: number, r1: number) => {
       t.poly([-r0, y0, r0, y0, r1, y1, -r1, y1]).fill(0x1a1d24)
-      t.poly([-r0 * 0.8, y0, -r0 * 0.25, y0, -r1 * 0.25, y1, -r1 * 0.8, y1]).fill({ color: 0xffffff, alpha: 0.16 })
-      t.poly([r0 * 0.35, y0, r0, y0, r1, y1, r1 * 0.35, y1]).fill({ color: 0x000000, alpha: 0.38 })
+      t.poly([-r0 * 0.86, y0, -r0 * 0.2, y0, -r1 * 0.2, y1, -r1 * 0.86, y1]).fill({ color: 0xffffff, alpha: 0.1 })
+      t.poly([-r0 * 0.62, y0, -r0 * 0.34, y0, -r1 * 0.34, y1, -r1 * 0.62, y1]).fill({ color: 0xffffff, alpha: 0.14 })
+      t.poly([r0 * 0.3, y0, r0 * 0.68, y0, r1 * 0.68, y1, r1 * 0.3, y1]).fill({ color: 0x000000, alpha: 0.24 })
+      t.poly([r0 * 0.68, y0, r0, y0, r1, y1, r1 * 0.68, y1]).fill({ color: 0x000000, alpha: 0.42 })
     }
 
-    // Soft contact shadow on the cone.
+    /** One orbiting handle: a curved arm anchored to the stem, swept by φ. */
+    const handle = (phi: number) => {
+      const depth = Math.sin(phi)
+      const side = Math.cos(phi)
+      if (Math.abs(side) < 0.08) return // edge-on: hidden behind the column
+      const topX = side * R * 0.02
+      const topY = -R * 0.21 + depth * R * 0.012
+      const outX = side * R * 0.14
+      const outY = -R * 0.115 + depth * R * 0.03
+      const botX = side * R * 0.075
+      const botY = -R * 0.015 + depth * R * 0.02
+      const width = R * (0.016 + 0.006 * Math.abs(side))
+      const shadeTone = depth > 0 ? 0x272b33 : 0x14171d
+      t.moveTo(topX, topY)
+        .quadraticCurveTo(outX * 1.25, topY + (outY - topY) * 0.4, outX, outY)
+        .quadraticCurveTo(outX * 1.05, outY + (botY - outY) * 0.7, botX, botY)
+        .stroke({ width, color: shadeTone, cap: 'round' })
+      t.moveTo(topX, topY)
+        .quadraticCurveTo(outX * 1.25, topY + (outY - topY) * 0.4, outX, outY)
+        .stroke({ width: width * 0.4, color: 0xffffff, alpha: depth > 0 ? 0.22 : 0.1, cap: 'round' })
+    }
+
+    // Contact shadow.
     t.ellipse(R * 0.025, R * 0.055, R * 0.2, R * 0.095).fill({ color: 0x000000, alpha: 0.32 })
 
-    disc(R * 0.03, R * 0.145, R * 0.035, 0x101318, 0x2a2e37)
+    // Handle currently behind the column.
+    if (Math.sin(rotation) <= 0) handle(rotation)
+    else handle(rotation + Math.PI)
+
+    disc(R * 0.03, R * 0.145, R * 0.035, 0x101318, 0x2a2e37, true)
     shaft(-R * 0.005, -R * 0.135, R * 0.032, R * 0.024)
-    disc(-R * 0.135, R * 0.082, R * 0.028, 0x0d1015, 0x31353e)
+    disc(-R * 0.135, R * 0.082, R * 0.028, 0x0d1015, 0x31353e, true)
     shaft(-R * 0.163, -R * 0.25, R * 0.02, R * 0.015)
     disc(-R * 0.25, R * 0.056, R * 0.022, 0x0d1015, 0x363a43)
     shaft(-R * 0.272, -R * 0.335, R * 0.012, R * 0.009)
 
-    // Faceted jewel lit from the top-left: facet brightness follows the light.
+    // Handle currently in front.
+    if (Math.sin(rotation) > 0) handle(rotation)
+    else handle(rotation + Math.PI)
+
+    // Jewel: facets spin with the rotor under a fixed top-left light.
     const gy = -R * 0.39
     const gr = R * 0.052
     const lightAngle = -Math.PI * 0.75
+    let bestLit = 0
+    let bestMid = 0
     for (let k = 0; k < 6; k++) {
-      const a0 = (k * TAU) / 6 - Math.PI / 2
+      const a0 = rotation + (k * TAU) / 6 - Math.PI / 2
       const a1 = a0 + TAU / 6
       const mid = (a0 + a1) / 2
       const lit = (Math.cos(mid - lightAngle) + 1) / 2
-      const shade = Math.round(0x7f + lit * 0x70)
+      if (lit > bestLit) {
+        bestLit = lit
+        bestMid = mid
+      }
+      const shade = Math.round(0x74 + lit * 0x80)
       const color = (shade << 16) | ((Math.min(255, shade + 24) & 0xff) << 8) | 0xff
       t.poly([
         0,
@@ -375,26 +435,19 @@ export class Wheel3D {
         .fill({ color, alpha: 0.96 })
         .stroke({ width: 1, color: 0x5f7796, alpha: 0.9 })
     }
-    // Bright table facet offset toward the light + sparkles.
-    t.poly([
-      -gr * 0.12,
-      gy - gr * 0.55,
-      gr * 0.32,
-      gy - gr * 0.05,
-      -gr * 0.1,
-      gy + gr * 0.4,
-      -gr * 0.45,
-      gy - gr * 0.08,
-    ]).fill({ color: 0xffffff, alpha: 0.85 })
-    for (const [sx, sy, s] of [
-      [-gr * 0.55, gy - gr * 0.45, R * 0.011],
-      [gr * 0.5, gy + gr * 0.3, R * 0.007],
-    ] as const) {
-      t.rect(sx - s, sy - s * 0.16, s * 2, s * 0.32).fill({ color: 0xffffff, alpha: 0.9 })
-      t.rect(sx - s * 0.16, sy - s, s * 0.32, s * 2).fill({ color: 0xffffff, alpha: 0.9 })
+    t.poly([0, gy - gr * 0.45, gr * 0.38, gy, 0, gy + gr * 0.45, -gr * 0.38, gy]).fill({
+      color: 0xffffff,
+      alpha: 0.55,
+    })
+    // Glint: flares up whenever the best-lit facet aligns with the light.
+    const glint = Math.pow(bestLit, 14)
+    if (glint > 0.25) {
+      const sx = Math.cos(bestMid) * gr * 0.55
+      const sy = gy + Math.sin(bestMid) * gr * 0.5
+      const s = R * 0.02 * glint
+      t.rect(sx - s, sy - s * 0.14, s * 2, s * 0.28).fill({ color: 0xffffff, alpha: glint })
+      t.rect(sx - s * 0.14, sy - s, s * 0.28, s * 2).fill({ color: 0xffffff, alpha: glint })
     }
-
-    this.turret.addChild(t)
   }
 
   /* --------------------------------- control --------------------------------- */
@@ -610,6 +663,8 @@ export class Wheel3D {
     const csin = Math.sin(this.rotation)
     CONE_MATRIX.set(ccos * cs, csin * cs * COS_T, -csin * cs, ccos * cs * COS_T, 0, R * STEP_DROP * SIN_T)
     this.cone.setFromMatrix(CONE_MATRIX)
+
+    this.drawTurretFrame(this.rotation)
 
     // Ball follows the bowl's slope on its way down.
     const drop = bowlHeight(ballR)
