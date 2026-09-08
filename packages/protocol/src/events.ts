@@ -34,6 +34,13 @@ export const recentResultSchema = z.object({
   color: z.enum(['red', 'black', 'green']),
 })
 
+export const chatMessageSchema = z.object({
+  playerId: z.string(),
+  nickname: z.string(),
+  text: z.string().min(1).max(200),
+  at: z.string(),
+})
+
 const phasePayload = z.object({
   phase: phaseSchema,
   roundId: z.string(),
@@ -53,8 +60,10 @@ export const serverEventSchema = z.discriminatedUnion('type', [
       betTotals: z.record(z.string(), z.number().int()),
       recentResults: z.array(recentResultSchema),
       lastNumber: z.number().int().min(0).max(36).nullable(),
+      chatHistory: z.array(chatMessageSchema),
     }),
   }),
+  z.object({ type: z.literal('chat_message'), payload: chatMessageSchema }),
   z.object({ type: z.literal('phase_changed'), payload: phasePayload }),
   z.object({
     type: z.literal('bet_accepted'),
@@ -103,6 +112,7 @@ export type TableSnapshot = Extract<ServerEvent, { type: 'table_snapshot' }>['pa
 export type Bet = z.infer<typeof betSchema>
 export type RecentResult = z.infer<typeof recentResultSchema>
 export type PlayerPublic = z.infer<typeof playerPublicSchema>
+export type ChatMessage = z.infer<typeof chatMessageSchema>
 
 /* ---------------------------------- client → server ---------------------------------- */
 
@@ -113,6 +123,10 @@ export const clientCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('undo_bet'), payload: z.object({}).default({}) }),
   z.object({ type: z.literal('clear_bets'), payload: z.object({}).default({}) }),
+  z.object({
+    type: z.literal('chat_send'),
+    payload: z.object({ text: z.string().trim().min(1).max(200) }),
+  }),
 ])
 
 export type ClientCommand = z.infer<typeof clientCommandSchema>

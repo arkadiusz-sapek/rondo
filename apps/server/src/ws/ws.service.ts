@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { eq } from 'drizzle-orm'
 import type { Server } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
-import { parseClientCommand, type ServerEvent } from '@rondo/protocol'
+import { parseClientCommand, type ChatMessage, type ServerEvent } from '@rondo/protocol'
 import { DB } from '../db/db.module'
 import type { Db } from '../db/index'
 import { players } from '../db/schema'
@@ -12,7 +12,11 @@ interface Session {
   socket: WebSocket
   playerId: string
   nickname: string
+  lastChatAt: number
 }
+
+const CHAT_HISTORY_SIZE = 50
+const CHAT_MIN_INTERVAL_MS = 1000
 
 /**
  * Plain-`ws` transport on top of Nest's HTTP server. Every frame in both
@@ -22,6 +26,8 @@ interface Session {
 @Injectable()
 export class WsService {
   private sessions = new Set<Session>()
+  /** Table chat is ephemeral by design — a ring buffer, not a DB table. */
+  private chatHistory: ChatMessage[] = []
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -48,7 +54,7 @@ export class WsService {
       .catch(() => undefined)
     if (!player) return socket.close(4003, 'unknown token')
 
-    const session: Session = { socket, playerId: player.id, nickname: player.nickname }
+    const session: Session = { socket, playerId: player.id, nickname: player.nickname, lastChatAt: 0 }
     const isFirstSocketOfPlayer = ![...this.sessions].some((s) => s.playerId === player.id)
     this.sessions.add(session)
 
@@ -61,6 +67,7 @@ export class WsService {
           balance: player.balance,
         }),
         players: this.playersAtTable(),
+        chatHistory: this.chatHistory,
       },
     })
     if (isFirstSocketOfPlayer) {
@@ -93,7 +100,25 @@ export class WsService {
         return this.engine.undoBet(session.playerId)
       case 'clear_bets':
         return this.engine.clearBets(session.playerId)
+      case 'chat_send':
+        return this.handleChat(session, command.payload.text)
     }
+  }
+
+  private handleChat(session: Session, text: string) {
+    const now = Date.now()
+    if (now - session.lastChatAt < CHAT_MIN_INTERVAL_MS) {
+      return send(session.socket, { type: 'error', payload: { message: 'Slow down a little' } })
+    }
+    session.lastChatAt = now
+    const message: ChatMessage = {
+      playerId: session.playerId,
+      nickname: session.nickname,
+      text: text.trim(),
+      at: new Date(now).toISOString(),
+    }
+    this.chatHistory = [...this.chatHistory, message].slice(-CHAT_HISTORY_SIZE)
+    this.broadcast({ type: 'chat_message', payload: message })
   }
 
   private async handleClose(session: Session) {
