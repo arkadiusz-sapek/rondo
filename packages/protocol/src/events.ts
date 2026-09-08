@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RANKS, SUITS } from './blackjack.js'
 
 /**
  * The wire protocol. Every frame is JSON `{ type, payload }` — a discriminated
@@ -34,6 +35,43 @@ export const recentResultSchema = z.object({
   color: z.enum(['red', 'black', 'green']),
 })
 
+export const tableMetaSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  game: z.enum(['roulette', 'blackjack']),
+  minStake: z.number().int(),
+  maxStake: z.number().int(),
+})
+
+export const cardSchema = z.object({
+  rank: z.enum(RANKS),
+  suit: z.enum(SUITS),
+})
+
+export const BJ_PHASES = ['betting', 'dealing', 'acting', 'dealer', 'result'] as const
+
+export const bjSeatSchema = z.object({
+  playerId: z.string(),
+  nickname: z.string(),
+  bet: z.number().int(),
+  doubled: z.boolean(),
+  cards: z.array(cardSchema),
+  total: z.number().int(),
+  busted: z.boolean(),
+  blackjack: z.boolean(),
+  done: z.boolean(),
+  outcome: z.enum(['blackjack', 'win', 'push', 'lose']).nullable(),
+})
+
+export const bjDealerSchema = z.object({
+  cards: z.array(cardSchema),
+  total: z.number().int(),
+  /** True while the hole card is face down — `cards` then holds only the upcard. */
+  hiding: z.boolean(),
+})
+
+const bjTurnSchema = z.object({ playerId: z.string(), endsAt: z.string() }).nullable()
+
 export const chatMessageSchema = z.object({
   playerId: z.string(),
   nickname: z.string(),
@@ -61,9 +99,56 @@ export const serverEventSchema = z.discriminatedUnion('type', [
       recentResults: z.array(recentResultSchema),
       lastNumber: z.number().int().min(0).max(36).nullable(),
       chatHistory: z.array(chatMessageSchema),
+      table: tableMetaSchema,
     }),
   }),
   z.object({ type: z.literal('chat_message'), payload: chatMessageSchema }),
+  z.object({
+    type: z.literal('bj_snapshot'),
+    payload: z.object({
+      table: tableMetaSchema,
+      you: z.object({ id: z.string(), nickname: z.string(), balance: z.number().int() }),
+      players: z.array(playerPublicSchema),
+      chatHistory: z.array(chatMessageSchema),
+      phase: z.enum(BJ_PHASES),
+      bettingEndsAt: z.string().nullable(),
+      seats: z.array(bjSeatSchema),
+      dealer: bjDealerSchema,
+      turn: bjTurnSchema,
+    }),
+  }),
+  z.object({
+    type: z.literal('bj_phase'),
+    payload: z.object({ phase: z.enum(BJ_PHASES), bettingEndsAt: z.string().nullable() }),
+  }),
+  z.object({
+    type: z.literal('bj_bet_accepted'),
+    payload: z.object({ bet: z.number().int(), balance: z.number().int() }),
+  }),
+  z.object({
+    type: z.literal('bj_deal'),
+    payload: z.object({ seats: z.array(bjSeatSchema), dealer: bjDealerSchema }),
+  }),
+  z.object({
+    type: z.literal('bj_card'),
+    payload: z.object({
+      to: z.string(),
+      card: cardSchema,
+      total: z.number().int(),
+      busted: z.boolean(),
+      doubled: z.boolean().optional(),
+    }),
+  }),
+  z.object({ type: z.literal('bj_turn'), payload: bjTurnSchema }),
+  z.object({
+    type: z.literal('bj_settled'),
+    payload: z.object({
+      seats: z.array(bjSeatSchema),
+      dealer: bjDealerSchema,
+      returned: z.number().int(),
+      balance: z.number().int(),
+    }),
+  }),
   z.object({ type: z.literal('phase_changed'), payload: phasePayload }),
   z.object({
     type: z.literal('bet_accepted'),
@@ -113,6 +198,11 @@ export type Bet = z.infer<typeof betSchema>
 export type RecentResult = z.infer<typeof recentResultSchema>
 export type PlayerPublic = z.infer<typeof playerPublicSchema>
 export type ChatMessage = z.infer<typeof chatMessageSchema>
+export type TableMeta = z.infer<typeof tableMetaSchema>
+export type BjPhase = (typeof BJ_PHASES)[number]
+export type BjSeat = z.infer<typeof bjSeatSchema>
+export type BjDealer = z.infer<typeof bjDealerSchema>
+export type BjSnapshot = Extract<ServerEvent, { type: 'bj_snapshot' }>['payload']
 
 /* ---------------------------------- client → server ---------------------------------- */
 
@@ -127,6 +217,14 @@ export const clientCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('chat_send'),
     payload: z.object({ text: z.string().trim().min(1).max(200) }),
   }),
+  z.object({
+    type: z.literal('bj_bet'),
+    payload: z.object({ amount: z.number().int().positive().max(1000) }),
+  }),
+  z.object({ type: z.literal('bj_clear'), payload: z.object({}).default({}) }),
+  z.object({ type: z.literal('bj_hit'), payload: z.object({}).default({}) }),
+  z.object({ type: z.literal('bj_stand'), payload: z.object({}).default({}) }),
+  z.object({ type: z.literal('bj_double'), payload: z.object({}).default({}) }),
 ])
 
 export type ClientCommand = z.infer<typeof clientCommandSchema>
