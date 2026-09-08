@@ -25,7 +25,7 @@ const BALL_REST = 0.545
 const LABEL_R = 0.71
 const CONE_R = 0.46
 /** How far (in R) the pocket band sits below the number band. */
-const STEP_DROP = 0.045
+const STEP_DROP = 0.028
 
 type Mode = 'idle' | 'spinning' | 'landing' | 'landed'
 
@@ -307,34 +307,53 @@ export class Wheel3D {
     const R = this.radius
     const t = new Graphics()
 
-    // Soft shadow cast on the cone.
-    t.ellipse(R * 0.02, R * 0.05, R * 0.19, R * 0.1).fill({ color: 0x000000, alpha: 0.3 })
-    // Turned base.
-    t.ellipse(0, R * 0.02, R * 0.15, R * 0.15 * COS_T).fill(0x14161c)
-    t.ellipse(0, 0, R * 0.13, R * 0.13 * COS_T).fill(0x23262e)
-    t.ellipse(0, -R * 0.006, R * 0.1, R * 0.1 * COS_T).fill(0x14161c)
-    // Column with a left-side catch light.
-    t.poly([-R * 0.032, 0, R * 0.032, 0, R * 0.022, -R * 0.14, -R * 0.022, -R * 0.14]).fill(0x1a1d24)
-    t.poly([-R * 0.028, -R * 0.002, -R * 0.012, -R * 0.002, -R * 0.008, -R * 0.14, -R * 0.02, -R * 0.14]).fill({
-      color: 0xffffff,
-      alpha: 0.14,
-    })
-    // Turned plates up the stem.
-    t.ellipse(0, -R * 0.14, R * 0.085, R * 0.085 * COS_T).fill(0x101318)
-    t.ellipse(0, -R * 0.155, R * 0.085, R * 0.085 * COS_T).fill(0x2b2f38)
-    t.ellipse(0, -R * 0.155, R * 0.05, R * 0.05 * COS_T).fill(0x1a1d24)
-    t.poly([-R * 0.018, -R * 0.155, R * 0.018, -R * 0.155, R * 0.013, -R * 0.26, -R * 0.013, -R * 0.26]).fill(0x191c22)
-    t.ellipse(0, -R * 0.26, R * 0.055, R * 0.055 * COS_T).fill(0x0e1116)
-    t.ellipse(0, -R * 0.272, R * 0.055, R * 0.055 * COS_T).fill(0x33373f)
-    t.poly([-R * 0.012, -R * 0.272, R * 0.012, -R * 0.272, R * 0.009, -R * 0.33, -R * 0.009, -R * 0.33]).fill(0x1a1d24)
+    /** A lathe step: dark side wall + lit top + front rim catch-light. */
+    const disc = (y: number, rx: number, height: number, wall: number, top: number) => {
+      const ry = rx * COS_T
+      t.ellipse(0, y, rx, ry).fill(wall)
+      t.rect(-rx, y - height, rx * 2, height).fill(wall)
+      // Side shading: dark right edge, light left edge (light from top-left).
+      t.rect(rx * 0.35, y - height, rx * 0.62, height).fill({ color: 0x000000, alpha: 0.3 })
+      t.rect(-rx * 0.92, y - height, rx * 0.35, height).fill({ color: 0xffffff, alpha: 0.09 })
+      t.ellipse(0, y - height, rx, ry).fill(top)
+      t.ellipse(0, y - height, rx * 0.66, ry * 0.66).fill(darken(top, 0.75))
+      // Front rim catch-light on the top ellipse.
+      const rim: number[] = []
+      for (let i = 0; i <= 24; i++) {
+        const a = Math.PI * 0.15 + (Math.PI * 0.7 * i) / 24
+        rim.push(Math.cos(a) * rx, y - height + Math.sin(a) * ry)
+      }
+      t.poly(rim, false).stroke({ width: 1.2, color: 0xffffff, alpha: 0.28 })
+    }
 
-    // Faceted jewel.
-    const gy = -R * 0.385
-    const gr = R * 0.055
-    const facets = [0xeaf4ff, 0xbfd9ff, 0x9fc4f4, 0xd6e8ff, 0xaacdf6, 0xe0eeff]
+    /** A tapering shaft with three-band cylindrical shading. */
+    const shaft = (y0: number, y1: number, r0: number, r1: number) => {
+      t.poly([-r0, y0, r0, y0, r1, y1, -r1, y1]).fill(0x1a1d24)
+      t.poly([-r0 * 0.8, y0, -r0 * 0.25, y0, -r1 * 0.25, y1, -r1 * 0.8, y1]).fill({ color: 0xffffff, alpha: 0.16 })
+      t.poly([r0 * 0.35, y0, r0, y0, r1, y1, r1 * 0.35, y1]).fill({ color: 0x000000, alpha: 0.38 })
+    }
+
+    // Soft contact shadow on the cone.
+    t.ellipse(R * 0.025, R * 0.055, R * 0.2, R * 0.095).fill({ color: 0x000000, alpha: 0.32 })
+
+    disc(R * 0.03, R * 0.145, R * 0.035, 0x101318, 0x2a2e37)
+    shaft(-R * 0.005, -R * 0.135, R * 0.032, R * 0.024)
+    disc(-R * 0.135, R * 0.082, R * 0.028, 0x0d1015, 0x31353e)
+    shaft(-R * 0.163, -R * 0.25, R * 0.02, R * 0.015)
+    disc(-R * 0.25, R * 0.056, R * 0.022, 0x0d1015, 0x363a43)
+    shaft(-R * 0.272, -R * 0.335, R * 0.012, R * 0.009)
+
+    // Faceted jewel lit from the top-left: facet brightness follows the light.
+    const gy = -R * 0.39
+    const gr = R * 0.052
+    const lightAngle = -Math.PI * 0.75
     for (let k = 0; k < 6; k++) {
       const a0 = (k * TAU) / 6 - Math.PI / 2
       const a1 = a0 + TAU / 6
+      const mid = (a0 + a1) / 2
+      const lit = (Math.cos(mid - lightAngle) + 1) / 2
+      const shade = Math.round(0x7f + lit * 0x70)
+      const color = (shade << 16) | ((Math.min(255, shade + 24) & 0xff) << 8) | 0xff
       t.poly([
         0,
         gy,
@@ -343,20 +362,26 @@ export class Wheel3D {
         Math.cos(a1) * gr,
         gy + Math.sin(a1) * gr * 0.85,
       ])
-        .fill({ color: facets[k], alpha: 0.95 })
-        .stroke({ width: 1, color: 0x7d95b5, alpha: 0.8 })
+        .fill({ color, alpha: 0.96 })
+        .stroke({ width: 1, color: 0x5f7796, alpha: 0.9 })
     }
-    t.poly([0, gy - gr * 0.5, gr * 0.4, gy, 0, gy + gr * 0.5, -gr * 0.4, gy]).fill({
-      color: 0xffffff,
-      alpha: 0.9,
-    })
-    // Sparkles.
+    // Bright table facet offset toward the light + sparkles.
+    t.poly([
+      -gr * 0.12,
+      gy - gr * 0.55,
+      gr * 0.32,
+      gy - gr * 0.05,
+      -gr * 0.1,
+      gy + gr * 0.4,
+      -gr * 0.45,
+      gy - gr * 0.08,
+    ]).fill({ color: 0xffffff, alpha: 0.85 })
     for (const [sx, sy, s] of [
-      [gr * 0.55, gy - gr * 0.4, R * 0.012],
-      [-gr * 0.5, gy + gr * 0.25, R * 0.008],
+      [-gr * 0.55, gy - gr * 0.45, R * 0.011],
+      [gr * 0.5, gy + gr * 0.3, R * 0.007],
     ] as const) {
-      t.rect(sx - s, sy - s * 0.18, s * 2, s * 0.36).fill({ color: 0xffffff, alpha: 0.9 })
-      t.rect(sx - s * 0.18, sy - s, s * 0.36, s * 2).fill({ color: 0xffffff, alpha: 0.9 })
+      t.rect(sx - s, sy - s * 0.16, s * 2, s * 0.32).fill({ color: 0xffffff, alpha: 0.9 })
+      t.rect(sx - s * 0.16, sy - s, s * 0.32, s * 2).fill({ color: 0xffffff, alpha: 0.9 })
     }
 
     this.turret.addChild(t)
@@ -414,6 +439,14 @@ export class Wheel3D {
     this.target = null
     this.plan = null
     this.setBallVisible(false)
+  }
+
+  /** Late joins / dropped frames: put the ball straight into the pocket. */
+  snapTo(number: number) {
+    this.mode = 'landed'
+    this.target = number
+    this.plan = null
+    this.setBallVisible(true)
   }
 
   tick(dtMs: number, now: number) {
@@ -511,38 +544,44 @@ export class Wheel3D {
       const p4 = this.project(a1, R * POCKET_IN, -R * STEP_DROP)
       g.poly([p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y]).fill(darken(color, 0.62))
 
-      // Chrome fret between segments, spanning both planes.
+      // Chrome fret between segments — bends with the step, never cuts it.
       const f1 = this.project(a0, R * NUM_OUT)
-      const f2 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
-      g.moveTo(f1.x, f1.y).lineTo(f2.x, f2.y).stroke({ width: 1.4, color: 0xc9ced6, alpha: 0.75 })
+      const f2 = this.project(a0, R * NUM_IN)
+      const f3 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
+      const f4 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
+      g.moveTo(f1.x, f1.y)
+        .lineTo(f2.x, f2.y)
+        .lineTo(f3.x, f3.y)
+        .lineTo(f4.x, f4.y)
+        .stroke({ width: 1.4, color: 0xc9ced6, alpha: 0.75 })
     }
 
-    // Winner highlight on both planes once the ball has landed.
+    // Winner highlight: ONE closed outline hugging the whole wedge — outer
+    // edge on the number band, down the fret, inner edge on the pocket band —
+    // built from the exact same projected points as the bands themselves.
     if (this.target !== null && this.mode === 'landed') {
       const i = WHEEL_NUMBERS.indexOf(this.target as (typeof WHEEL_NUMBERS)[number])
       const a0 = this.rotation + i * STEP - STEP / 2
       const a1 = this.rotation + i * STEP + STEP / 2
-      const n1 = this.project(a0, R * NUM_IN)
-      const n2 = this.project(a0, R * NUM_OUT)
-      const n3 = this.project(a1, R * NUM_OUT)
-      const n4 = this.project(a1, R * NUM_IN)
-      g.poly([n1.x, n1.y, n2.x, n2.y, n3.x, n3.y, n4.x, n4.y]).stroke({ width: 2.5, color: palette.gold })
-      const p1 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
-      const p2 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
-      const p3 = this.project(a1, R * POCKET_OUT, -R * STEP_DROP)
-      const p4 = this.project(a1, R * POCKET_IN, -R * STEP_DROP)
-      g.poly([p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y]).stroke({
-        width: 1.5,
-        color: palette.gold,
-        alpha: 0.7,
-      })
+      const outline: number[] = []
+      const push = (p: { x: number; y: number }) => outline.push(p.x, p.y)
+      push(this.project(a0, R * NUM_OUT))
+      push(this.project(a1, R * NUM_OUT))
+      push(this.project(a1, R * NUM_IN))
+      push(this.project(a1, R * POCKET_OUT, -R * STEP_DROP))
+      push(this.project(a1, R * POCKET_IN, -R * STEP_DROP))
+      push(this.project(a0, R * POCKET_IN, -R * STEP_DROP))
+      push(this.project(a0, R * POCKET_OUT, -R * STEP_DROP))
+      push(this.project(a0, R * NUM_IN))
+      g.poly(outline).stroke({ width: 2.5, color: palette.gold })
     }
 
-    // Inner shadow where the rotor meets the cone.
-    g.ellipse(0, R * STEP_DROP * SIN_T * -1, R * POCKET_IN, R * POCKET_IN * COS_T).stroke({
-      width: R * 0.02,
+    // Inner shadow where the (stepped-down) rotor meets the cone — the ring
+    // must sit on the SAME lowered plane as the pocket band.
+    g.ellipse(0, R * STEP_DROP * SIN_T, R * POCKET_IN, R * POCKET_IN * COS_T).stroke({
+      width: R * 0.014,
       color: 0x000000,
-      alpha: 0.4,
+      alpha: 0.32,
     })
 
     // Labels: painted on the number band with the full affine projection.
@@ -567,7 +606,7 @@ export class Wheel3D {
     const cs = (R * CONE_R) / 140
     const ccos = Math.cos(this.rotation)
     const csin = Math.sin(this.rotation)
-    CONE_MATRIX.set(ccos * cs, csin * cs * COS_T, -csin * cs, ccos * cs * COS_T, 0, -R * STEP_DROP * SIN_T)
+    CONE_MATRIX.set(ccos * cs, csin * cs * COS_T, -csin * cs, ccos * cs * COS_T, 0, R * STEP_DROP * SIN_T)
     this.cone.setFromMatrix(CONE_MATRIX)
 
     // Ball.

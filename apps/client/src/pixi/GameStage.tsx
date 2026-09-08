@@ -57,6 +57,7 @@ export function GameStage() {
 
       let firstFrame = true
       let prevPhase: Phase | null = null
+      let prevRound: string | null = null
       let prevTarget: number | null = null
       let prevBets: unknown = null
       let prevTotals: unknown = null
@@ -76,20 +77,34 @@ export function GameStage() {
         const H = app!.screen.height
         const betting = state.phase === 'betting'
 
+        // Round identity beats phase edges: a hidden/throttled tab can skip
+        // whole phases between frames, so never trust transitions alone.
+        if (state.roundId !== prevRound) {
+          prevRound = state.roundId
+          prevTarget = null
+          wheel.reset()
+          board.showWinner(null)
+        }
         if (state.phase !== prevPhase) {
           if (state.phase === 'spinning') wheel.startSpin()
           if (state.phase === 'betting') {
             wheel.reset()
             board.showWinner(null)
           }
-          if (state.phase === 'result') board.showWinner(state.spinTarget)
           prevPhase = state.phase
         }
         if (state.spinTarget !== prevTarget) {
-          if (state.spinTarget !== null && state.phase === 'spinning') {
-            wheel.landOn(state.spinTarget, SPIN_LANDING_MS, now)
+          if (state.spinTarget !== null) {
+            if (state.phase === 'spinning') {
+              wheel.landOn(state.spinTarget, SPIN_LANDING_MS, now)
+            } else if (state.phase === 'result') {
+              wheel.snapTo(state.spinTarget)
+            }
           }
           prevTarget = state.spinTarget
+        }
+        if (state.phase === 'result' && state.spinTarget !== null) {
+          board.showWinner(state.spinTarget)
         }
         if (state.myBets !== prevBets || state.betTotals !== prevTotals) {
           board.renderChips(state.myBets, state.betTotals)
