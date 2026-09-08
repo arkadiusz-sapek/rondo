@@ -24,8 +24,18 @@ const POCKET_IN = 0.47
 const BALL_REST = 0.545
 const LABEL_R = 0.71
 const CONE_R = 0.46
-/** How far (in R) the pocket band sits below the number band. */
-const STEP_DROP = 0.028
+/**
+ * The bowl is a continuous slope, like a real wheel: height falls linearly
+ * from the outer edge of the number band down to the inner edge of the
+ * pockets — no vertical cliff, the frets lie flat ON the slope.
+ */
+const STEP_DROP = 0.055
+
+function bowlHeight(r: number): number {
+  if (r >= NUM_OUT) return 0
+  const t = Math.min(1, (NUM_OUT - r) / (NUM_OUT - POCKET_IN))
+  return -STEP_DROP * t
+}
 
 type Mode = 'idle' | 'spinning' | 'landing' | 'landed'
 
@@ -518,43 +528,40 @@ export class Wheel3D {
 
     g.clear()
 
+    const at = (angle: number, r: number) => this.project(angle, R * r, R * bowlHeight(r))
+
     for (let i = 0; i < WHEEL_NUMBERS.length; i++) {
       const a0 = this.rotation + i * STEP - STEP / 2
       const a1 = this.rotation + i * STEP + STEP / 2
       const color = pocketFill(colorOf(WHEEL_NUMBERS[i]))
 
-      // Number band (upper plane).
-      const n1 = this.project(a0, R * NUM_IN)
-      const n2 = this.project(a0, R * NUM_OUT)
-      const n3 = this.project(a1, R * NUM_OUT)
-      const n4 = this.project(a1, R * NUM_IN)
+      // Number band — the upper part of the slope.
+      const n1 = at(a0, NUM_IN)
+      const n2 = at(a0, NUM_OUT)
+      const n3 = at(a1, NUM_OUT)
+      const n4 = at(a1, NUM_IN)
       g.poly([n1.x, n1.y, n2.x, n2.y, n3.x, n3.y, n4.x, n4.y]).fill(color)
 
-      // Step wall between the planes.
-      const w1 = this.project(a0, R * NUM_IN)
-      const w2 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
-      const w3 = this.project(a1, R * POCKET_OUT, -R * STEP_DROP)
-      const w4 = this.project(a1, R * NUM_IN)
-      g.poly([w1.x, w1.y, w2.x, w2.y, w3.x, w3.y, w4.x, w4.y]).fill(darken(color, 0.35))
+      // Pocket — same surface continuing down the slope, shaded by tilt.
+      const p1 = at(a0, POCKET_IN)
+      const p2 = at(a0, NUM_IN)
+      const p3 = at(a1, NUM_IN)
+      const p4 = at(a1, POCKET_IN)
+      g.poly([p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y]).fill(darken(color, 0.68))
 
-      // Pocket band (lower plane, darker).
-      const p1 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
-      const p2 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
-      const p3 = this.project(a1, R * POCKET_OUT, -R * STEP_DROP)
-      const p4 = this.project(a1, R * POCKET_IN, -R * STEP_DROP)
-      g.poly([p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y]).fill(darken(color, 0.62))
-
-      // Chrome fret between segments — bends with the step, never cuts it.
-      const f1 = this.project(a0, R * NUM_OUT)
-      const f2 = this.project(a0, R * NUM_IN)
-      const f3 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
-      const f4 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
-      g.moveTo(f1.x, f1.y)
-        .lineTo(f2.x, f2.y)
-        .lineTo(f3.x, f3.y)
-        .lineTo(f4.x, f4.y)
-        .stroke({ width: 1.4, color: 0xc9ced6, alpha: 0.75 })
+      // Chrome fret lying flat on the slope — with a linear ramp its
+      // projection is a single straight segment.
+      const f1 = at(a0, NUM_OUT)
+      const f2 = at(a0, POCKET_IN)
+      g.moveTo(f1.x, f1.y).lineTo(f2.x, f2.y).stroke({ width: 1.4, color: 0xc9ced6, alpha: 0.75 })
     }
+
+    // Thin seam ring where numbers meet pockets (a tone change, not a cliff).
+    g.ellipse(0, -R * bowlHeight(NUM_IN) * SIN_T, R * NUM_IN, R * NUM_IN * COS_T).stroke({
+      width: 1,
+      color: 0x000000,
+      alpha: 0.25,
+    })
 
     // Winner highlight: ONE closed outline hugging the whole wedge — outer
     // edge on the number band, down the fret, inner edge on the pocket band —
@@ -563,17 +570,12 @@ export class Wheel3D {
       const i = WHEEL_NUMBERS.indexOf(this.target as (typeof WHEEL_NUMBERS)[number])
       const a0 = this.rotation + i * STEP - STEP / 2
       const a1 = this.rotation + i * STEP + STEP / 2
-      const outline: number[] = []
-      const push = (p: { x: number; y: number }) => outline.push(p.x, p.y)
-      push(this.project(a0, R * NUM_OUT))
-      push(this.project(a1, R * NUM_OUT))
-      push(this.project(a1, R * NUM_IN))
-      push(this.project(a1, R * POCKET_OUT, -R * STEP_DROP))
-      push(this.project(a1, R * POCKET_IN, -R * STEP_DROP))
-      push(this.project(a0, R * POCKET_IN, -R * STEP_DROP))
-      push(this.project(a0, R * POCKET_OUT, -R * STEP_DROP))
-      push(this.project(a0, R * NUM_IN))
-      g.poly(outline).stroke({ width: 2.5, color: palette.gold })
+      // On the ramp the whole wedge is a single quad in projection.
+      const c1 = at(a0, NUM_OUT)
+      const c2 = at(a1, NUM_OUT)
+      const c3 = at(a1, POCKET_IN)
+      const c4 = at(a0, POCKET_IN)
+      g.poly([c1.x, c1.y, c2.x, c2.y, c3.x, c3.y, c4.x, c4.y]).stroke({ width: 2.5, color: palette.gold })
     }
 
     // Inner shadow where the (stepped-down) rotor meets the cone — the ring
@@ -597,7 +599,7 @@ export class Wheel3D {
         -sin,
         cos * COS_T,
         Math.cos(mid) * R * LABEL_R,
-        Math.sin(mid) * R * LABEL_R * COS_T,
+        Math.sin(mid) * R * LABEL_R * COS_T - R * bowlHeight(LABEL_R) * SIN_T,
       )
       label.setFromMatrix(LABEL_MATRIX)
     }
@@ -609,8 +611,8 @@ export class Wheel3D {
     CONE_MATRIX.set(ccos * cs, csin * cs * COS_T, -csin * cs, ccos * cs * COS_T, 0, R * STEP_DROP * SIN_T)
     this.cone.setFromMatrix(CONE_MATRIX)
 
-    // Ball.
-    const drop = ballR <= POCKET_OUT ? -STEP_DROP : 0
+    // Ball follows the bowl's slope on its way down.
+    const drop = bowlHeight(ballR)
     const ballPos = this.project(this.ballAngle, R * ballR, R * (bounce + drop))
     const shadowPos = this.project(this.ballAngle, R * ballR, R * drop)
     this.ball.position.set(ballPos.x, ballPos.y - R * 0.018)
