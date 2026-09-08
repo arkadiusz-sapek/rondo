@@ -1,4 +1,4 @@
-import { Container, Graphics, Text } from 'pixi.js'
+import { Container, Graphics, Matrix, Text } from 'pixi.js'
 import { WHEEL_NUMBERS, colorOf } from '@rondo/protocol'
 import { palette, pocketFill } from './palette'
 
@@ -18,6 +18,8 @@ const BALL_REST = 0.8
 const LABEL_R = 0.81
 
 type Mode = 'idle' | 'spinning' | 'landing' | 'landed'
+
+const LABEL_MATRIX = new Matrix()
 
 function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3)
@@ -200,14 +202,21 @@ export class Wheel3D {
     for (let i = 0; i < this.labels.length; i++) {
       const label = this.labels[i]
       const mid = this.rotation + i * STEP
-      const pos = this.project(mid, R * LABEL_R)
-      label.position.set(pos.x, pos.y)
-      // Radial orientation from the projected position — rotates evenly with
-      // the rotor instead of "swimming" like the old tangent math did.
-      label.rotation = Math.atan2(pos.y, pos.x) + Math.PI / 2
-      // Depth cue: near-side numbers slightly larger.
-      const depthScale = 0.82 + 0.18 * (Math.sin(mid) + 1) * 0.5
-      label.scale.set(depthScale)
+      // Labels are painted ON the disc: rotate radially in disc space, then
+      // apply the exact same tilt projection as the pockets. A plain screen
+      // rotation can't reproduce the foreshortening — a full affine can.
+      const rot = mid + Math.PI / 2
+      const cos = Math.cos(rot)
+      const sin = Math.sin(rot)
+      LABEL_MATRIX.set(
+        cos,
+        sin * COS_T,
+        -sin,
+        cos * COS_T,
+        Math.cos(mid) * R * LABEL_R,
+        Math.sin(mid) * R * LABEL_R * COS_T,
+      )
+      label.setFromMatrix(LABEL_MATRIX)
     }
 
     const ballPos = this.project(this.ballAngle, R * ballR, bounce * R)
