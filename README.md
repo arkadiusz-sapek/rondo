@@ -1,9 +1,11 @@
-# rondo — live multiplayer roulette
+# rondo — a tiny live casino
 
-A full, working live-casino-style roulette table: one authoritative server
-round-loop that every connected player shares (exactly like a live dealer
-table), a typed WebSocket protocol, and a PixiJS-rendered wheel and betting
-layout. Fun money only — every guest sits down with $100.
+Accounts, a lobby of rooms, an admin backoffice and two live multiplayer
+games — roulette and blackjack — each driven by an authoritative server
+round-loop that every connected player shares (like a live dealer table),
+over one typed WebSocket protocol. All graphics drawn programmatically in
+PixiJS. Fun money only: the admin sets the house bankroll, players can reset
+their balance anytime.
 
 > **Provenance note**: this is an independent, from-scratch implementation of
 > publicly known live-casino UX patterns (phased rounds, bet spots, result
@@ -108,9 +110,22 @@ three packages.
 - RNG is `crypto.randomInt` server-side. A provably-fair scheme
   (hash-committed seeds) is on the roadmap.
 
+## Platform
+
+- **Accounts & roles**: nickname+password (scrypt), bearer token; the first
+  registered account becomes the admin.
+- **Lobby**: category sidebar, room tiles with stakes and live player
+  counts; rooms are DB rows, one engine instance runs per open room.
+- **Admin backoffice** (`#/admin`): create/edit/close tables (name shown
+  top-left at the table, min/max stakes enforced by the engines) and set the
+  default bankroll used at registration and self-service balance resets.
+- **Blackjack**: 6-deck shoe, shared dealer, up to five seats per round,
+  hit/stand/double with a 12s decision clock, S17, blackjack pays 3:2 —
+  rules unit-tested in the shared protocol package.
+
 ## Roadmap
 
-- split / corner / street / line bets
+- split / corner / street / line bets, blackjack splits & insurance
 - provably-fair seed commitment
 - seats & avatars around the table, bet racetrack
-- spectator mode polish, sounds, mobile layout
+- sounds, mobile layout
