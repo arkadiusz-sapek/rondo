@@ -1,4 +1,3 @@
-import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common'
 import { randomInt, randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import {
@@ -10,9 +9,9 @@ import {
   type RecentResult,
   type ServerEvent,
 } from '@rondo/protocol'
-import { DB } from '../db/db.module'
 import type { Db } from '../db/index'
-import { bets, players, rounds } from '../db/schema'
+import { bets, rounds, users, type TableRow } from '../db/schema'
+import type { GameEngine, Transport } from './transport'
 
 /** Phase lengths in ms — one full cycle ≈ 30s, close to live-table pacing. */
 const DURATIONS = {
@@ -23,19 +22,17 @@ const DURATIONS = {
   result: 5_000,
 } as const
 
-const MAX_TOTAL_BET = 500
-
 interface PendingBet extends Bet {
   playerId: string
 }
 
 /**
- * The authoritative table. Exactly one round loop runs on the server; clients
- * only ever mirror it. Balances move in the DB at bet/refund/settle time so a
- * server restart can never mint or burn money.
+ * The authoritative roulette table — one instance per open room. Balances
+ * move in the DB at bet/refund/settle time so a server restart can never
+ * mint or burn money. Stake limits come from the room's admin config.
  */
-@Injectable()
-export class EngineService implements OnModuleInit, OnModuleDestroy {
+export class RouletteEngine implements GameEngine {
+  readonly game = 'roulette' as const
   private phase: Phase = 'betting'
   private roundId = randomUUID()
   private bettingEndsAt: Date | null = null
@@ -45,24 +42,23 @@ export class EngineService implements OnModuleInit, OnModuleDestroy {
   private recentResults: RecentResult[] = []
   private timer: NodeJS.Timeout | null = null
 
-  private broadcast: (event: ServerEvent) => void = () => {}
-  private sendTo: (playerId: string, event: ServerEvent) => void = () => {}
+  private broadcast: (event: ServerEvent) => void
+  private sendTo: (playerId: string, event: ServerEvent) => void
 
-  constructor(@Inject(DB) private readonly db: Db) {}
-
-  /** WsService plugs the transport in before the first tick needs it. */
-  setTransport(transport: {
-    broadcast: (event: ServerEvent) => void
-    sendTo: (playerId: string, event: ServerEvent) => void
-  }) {
+  constructor(
+    private readonly db: Db,
+    public table: TableRow,
+    transport: Transport,
+  ) {
     this.broadcast = transport.broadcast
     this.sendTo = transport.sendTo
   }
 
-  async onModuleInit() {
+  async start() {
     const recent = await this.db
       .select()
       .from(rounds)
+      .where(eq(rounds.tableId, this.table.id))
       .orderBy(sql`${rounds.settledAt} desc`)
       .limit(12)
     this.recentResults = recent.map((round) => ({
@@ -74,7 +70,7 @@ export class EngineService implements OnModuleInit, OnModuleDestroy {
     this.startBetting()
   }
 
-  onModuleDestroy() {
+  stop() {
     if (this.timer) clearTimeout(this.timer)
   }
 
@@ -101,20 +97,23 @@ export class EngineService implements OnModuleInit, OnModuleDestroy {
     }
     const spot = parseBetSpot(rawSpot)
     if (!spot) return this.sendTo(playerId, reject('Unknown bet spot'))
+    if (amount < this.table.minStake) {
+      return this.sendTo(playerId, reject(`Minimum bet is $${this.table.minStake}`))
+    }
 
     const myTotal = this.pendingBets
       .filter((bet) => bet.playerId === playerId)
       .reduce((sum, bet) => sum + bet.amount, 0)
-    if (myTotal + amount > MAX_TOTAL_BET) {
-      return this.sendTo(playerId, reject(`Table limit is $${MAX_TOTAL_BET} per round`))
+    if (myTotal + amount > this.table.maxStake) {
+      return this.sendTo(playerId, reject(`Table limit is $${this.table.maxStake} per round`))
     }
 
     // Atomic escrow: only succeeds when the balance actually covers the stake.
     const [updated] = await this.db
-      .update(players)
-      .set({ balance: sql`${players.balance} - ${amount}` })
-      .where(sql`${players.id} = ${playerId} and ${players.balance} >= ${amount}`)
-      .returning({ balance: players.balance })
+      .update(users)
+      .set({ balance: sql`${users.balance} - ${amount}` })
+      .where(sql`${users.id} = ${playerId} and ${users.balance} >= ${amount}`)
+      .returning({ balance: users.balance })
     if (!updated) return this.sendTo(playerId, reject('Not enough balance'))
 
     const bet: PendingBet = { id: randomUUID(), playerId, spot, amount }
@@ -149,10 +148,10 @@ export class EngineService implements OnModuleInit, OnModuleDestroy {
 
   private async refund(playerId: string, amount: number) {
     const [updated] = await this.db
-      .update(players)
-      .set({ balance: sql`${players.balance} + ${amount}` })
-      .where(eq(players.id, playerId))
-      .returning({ balance: players.balance })
+      .update(users)
+      .set({ balance: sql`${users.balance} + ${amount}` })
+      .where(eq(users.id, playerId))
+      .returning({ balance: users.balance })
     if (updated) {
       const myBets = this.pendingBets
         .filter((bet) => bet.playerId === playerId)
@@ -209,7 +208,7 @@ export class EngineService implements OnModuleInit, OnModuleDestroy {
 
     this.recentResults = [{ roundId, number, color }, ...this.recentResults].slice(0, 12)
 
-    await this.db.insert(rounds).values({ id: roundId, number })
+    await this.db.insert(rounds).values({ id: roundId, tableId: this.table.id, number })
     if (this.pendingBets.length > 0) {
       await this.db.insert(bets).values(
         this.pendingBets.map((bet) => ({
@@ -231,10 +230,10 @@ export class EngineService implements OnModuleInit, OnModuleDestroy {
 
     for (const [playerId, returned] of byPlayer) {
       const [updated] = await this.db
-        .update(players)
-        .set({ balance: sql`${players.balance} + ${returned}` })
-        .where(eq(players.id, playerId))
-        .returning({ balance: players.balance })
+        .update(users)
+        .set({ balance: sql`${users.balance} + ${returned}` })
+        .where(eq(users.id, playerId))
+        .returning({ balance: users.balance })
       this.sendTo(playerId, {
         type: 'round_settled',
         payload: {

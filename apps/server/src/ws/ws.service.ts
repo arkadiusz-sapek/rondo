@@ -5,13 +5,18 @@ import { WebSocket, WebSocketServer } from 'ws'
 import { parseClientCommand, type ChatMessage, type ServerEvent } from '@rondo/protocol'
 import { DB } from '../db/db.module'
 import type { Db } from '../db/index'
-import { players } from '../db/schema'
-import { EngineService } from '../engine/engine.service'
+import { users } from '../db/schema'
+import type { BlackjackEngine } from '../engine/blackjackEngine'
+import type { RouletteEngine } from '../engine/rouletteEngine'
+import type { Transport } from '../engine/transport'
+
+type Engine = RouletteEngine | BlackjackEngine
 
 interface Session {
   socket: WebSocket
   playerId: string
   nickname: string
+  tableId: string
   lastChatAt: number
 }
 
@@ -19,60 +24,78 @@ const CHAT_HISTORY_SIZE = 50
 const CHAT_MIN_INTERVAL_MS = 1000
 
 /**
- * Plain-`ws` transport on top of Nest's HTTP server. Every frame in both
- * directions is `{ type, payload }`; incoming frames are zod-parsed and
- * dispatched with one switch — malformed input never reaches the engine.
+ * Table-scoped transport hub: sockets authenticate with a bearer token and
+ * name their table; every frame is `{ type, payload }`, zod-parsed and routed
+ * to that table's engine with one switch.
  */
 @Injectable()
 export class WsService {
   private sessions = new Set<Session>()
-  /** Table chat is ephemeral by design — a ring buffer, not a DB table. */
-  private chatHistory: ChatMessage[] = []
+  private chat = new Map<string, ChatMessage[]>()
+  private resolveEngine: (tableId: string) => Engine | undefined = () => undefined
 
-  constructor(
-    @Inject(DB) private readonly db: Db,
-    private readonly engine: EngineService,
-  ) {
-    this.engine.setTransport({
-      broadcast: (event) => this.broadcast(event),
-      sendTo: (playerId, event) => this.sendTo(playerId, event),
-    })
+  constructor(@Inject(DB) private readonly db: Db) {}
+
+  setEngineResolver(resolver: (tableId: string) => Engine | undefined) {
+    this.resolveEngine = resolver
+  }
+
+  transportFor(tableId: string): Transport {
+    return {
+      broadcast: (event) => this.broadcastTable(tableId, event),
+      sendTo: (playerId, event) => this.sendToUser(tableId, playerId, event),
+    }
   }
 
   attach(httpServer: Server) {
     const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
     wss.on('connection', (socket, request) => {
-      const token = new URL(request.url ?? '', 'http://localhost').searchParams.get('token')
-      if (!token) return socket.close(4001, 'missing token')
-      void this.handleConnection(socket, token)
+      const url = new URL(request.url ?? '', 'http://localhost')
+      const token = url.searchParams.get('token')
+      const tableId = url.searchParams.get('table')
+      if (!token || !tableId) return socket.close(4001, 'missing token or table')
+      void this.handleConnection(socket, token, tableId)
     })
   }
 
-  private async handleConnection(socket: WebSocket, token: string) {
-    const player = await this.db.query.players
-      .findFirst({ where: eq(players.token, token) })
-      .catch(() => undefined)
-    if (!player) return socket.close(4003, 'unknown token')
+  private async handleConnection(socket: WebSocket, token: string, tableId: string) {
+    const user = await this.db.query.users.findFirst({ where: eq(users.token, token) }).catch(() => undefined)
+    if (!user) return socket.close(4003, 'unknown token')
+    const engine = this.resolveEngine(tableId)
+    if (!engine) return socket.close(4004, 'unknown table')
 
-    const session: Session = { socket, playerId: player.id, nickname: player.nickname, lastChatAt: 0 }
-    const isFirstSocketOfPlayer = ![...this.sessions].some((s) => s.playerId === player.id)
+    const session: Session = {
+      socket,
+      playerId: user.id,
+      nickname: user.nickname,
+      tableId,
+      lastChatAt: 0,
+    }
+    const isFirstSocketOfPlayer = !this.playersAt(tableId).some((p) => p.id === user.id)
     this.sessions.add(session)
 
-    send(socket, {
-      type: 'table_snapshot',
-      payload: {
-        ...this.engine.snapshotFor({
-          id: player.id,
-          nickname: player.nickname,
-          balance: player.balance,
-        }),
-        players: this.playersAtTable(),
-        chatHistory: this.chatHistory,
+    const you = { id: user.id, nickname: user.nickname, balance: user.balance }
+    const shared = {
+      you,
+      players: this.playersAt(tableId),
+      chatHistory: this.chat.get(tableId) ?? [],
+      table: {
+        id: engine.table.id,
+        name: engine.table.name,
+        game: engine.table.game,
+        minStake: engine.table.minStake,
+        maxStake: engine.table.maxStake,
       },
-    })
+    }
+    if (engine.game === 'roulette') {
+      send(socket, { type: 'table_snapshot', payload: { ...engine.snapshotFor(you), ...shared } })
+    } else {
+      send(socket, { type: 'bj_snapshot', payload: { ...engine.snapshot(), ...shared } })
+    }
     if (isFirstSocketOfPlayer) {
-      this.broadcast(
-        { type: 'player_joined', payload: { player: { id: player.id, nickname: player.nickname } } },
+      this.broadcastTable(
+        tableId,
+        { type: 'player_joined', payload: { player: { id: user.id, nickname: user.nickname } } },
         session,
       )
     }
@@ -92,17 +115,38 @@ export class WsService {
     if (!command) {
       return send(session.socket, { type: 'error', payload: { message: 'unknown command' } })
     }
+    const engine = this.resolveEngine(session.tableId)
+    if (!engine) return send(session.socket, { type: 'error', payload: { message: 'table closed' } })
 
     switch (command.type) {
-      case 'place_bet':
-        return this.engine.placeBet(session.playerId, command.payload.spot, command.payload.amount)
-      case 'undo_bet':
-        return this.engine.undoBet(session.playerId)
-      case 'clear_bets':
-        return this.engine.clearBets(session.playerId)
       case 'chat_send':
         return this.handleChat(session, command.payload.text)
+      case 'place_bet':
+        if (engine.game !== 'roulette') break
+        return engine.placeBet(session.playerId, command.payload.spot, command.payload.amount)
+      case 'undo_bet':
+        if (engine.game !== 'roulette') break
+        return engine.undoBet(session.playerId)
+      case 'clear_bets':
+        if (engine.game !== 'roulette') break
+        return engine.clearBets(session.playerId)
+      case 'bj_bet':
+        if (engine.game !== 'blackjack') break
+        return engine.placeBet(session.playerId, session.nickname, command.payload.amount)
+      case 'bj_clear':
+        if (engine.game !== 'blackjack') break
+        return engine.clearBet(session.playerId)
+      case 'bj_hit':
+        if (engine.game !== 'blackjack') break
+        return engine.hit(session.playerId)
+      case 'bj_stand':
+        if (engine.game !== 'blackjack') break
+        return engine.stand(session.playerId)
+      case 'bj_double':
+        if (engine.game !== 'blackjack') break
+        return engine.double(session.playerId)
     }
+    send(session.socket, { type: 'error', payload: { message: 'wrong game for that command' } })
   }
 
   private handleChat(session: Session, text: string) {
@@ -117,34 +161,48 @@ export class WsService {
       text: text.trim(),
       at: new Date(now).toISOString(),
     }
-    this.chatHistory = [...this.chatHistory, message].slice(-CHAT_HISTORY_SIZE)
-    this.broadcast({ type: 'chat_message', payload: message })
+    const history = [...(this.chat.get(session.tableId) ?? []), message].slice(-CHAT_HISTORY_SIZE)
+    this.chat.set(session.tableId, history)
+    this.broadcastTable(session.tableId, { type: 'chat_message', payload: message })
   }
 
   private async handleClose(session: Session) {
     this.sessions.delete(session)
-    const stillConnected = [...this.sessions].some((s) => s.playerId === session.playerId)
+    const stillConnected = [...this.sessions].some(
+      (candidate) => candidate.playerId === session.playerId && candidate.tableId === session.tableId,
+    )
     if (!stillConnected) {
-      await this.engine.dropPlayer(session.playerId)
-      this.broadcast({ type: 'player_left', payload: { playerId: session.playerId } })
+      await this.resolveEngine(session.tableId)?.dropPlayer(session.playerId)
+      this.broadcastTable(session.tableId, { type: 'player_left', payload: { playerId: session.playerId } })
     }
   }
 
-  playersAtTable() {
+  playersAt(tableId: string) {
     const seen = new Map<string, string>()
-    for (const session of this.sessions) seen.set(session.playerId, session.nickname)
+    for (const session of this.sessions) {
+      if (session.tableId === tableId) seen.set(session.playerId, session.nickname)
+    }
     return [...seen.entries()].map(([id, nickname]) => ({ id, nickname }))
   }
 
-  private broadcast(event: ServerEvent, except?: Session) {
+  kickTable(tableId: string, reason: string) {
     for (const session of this.sessions) {
-      if (session !== except) send(session.socket, event)
+      if (session.tableId === tableId) {
+        send(session.socket, { type: 'error', payload: { message: reason } })
+        session.socket.close(4005, reason)
+      }
     }
   }
 
-  private sendTo(playerId: string, event: ServerEvent) {
+  private broadcastTable(tableId: string, event: ServerEvent, except?: Session) {
     for (const session of this.sessions) {
-      if (session.playerId === playerId) send(session.socket, event)
+      if (session.tableId === tableId && session !== except) send(session.socket, event)
+    }
+  }
+
+  private sendToUser(tableId: string, playerId: string, event: ServerEvent) {
+    for (const session of this.sessions) {
+      if (session.tableId === tableId && session.playerId === playerId) send(session.socket, event)
     }
   }
 }
