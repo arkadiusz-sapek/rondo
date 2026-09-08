@@ -367,26 +367,34 @@ export class Wheel3D {
       t.poly([r0 * 0.68, y0, r0, y0, r1, y1, r1 * 0.68, y1]).fill({ color: 0x000000, alpha: 0.42 })
     }
 
-    /** One orbiting handle: a curved arm anchored to the stem, swept by φ. */
+    /**
+     * One orbiting handle: a TRUE 3D curve — the arm lives in the vertical
+     * plane at azimuth φ; each sample is projected like everything else on
+     * the wheel. Seen head-on it foreshortens into a downward-bowing arc
+     * instead of collapsing to a paper line, and its tone follows a smooth
+     * light function, so nothing ever snaps.
+     */
+    const lightAngle = -Math.PI * 0.75
     const handle = (phi: number) => {
-      const depth = Math.sin(phi)
-      const side = Math.cos(phi)
-      if (Math.abs(side) < 0.08) return // edge-on: hidden behind the column
-      const topX = side * R * 0.02
-      const topY = -R * 0.21 + depth * R * 0.012
-      const outX = side * R * 0.14
-      const outY = -R * 0.115 + depth * R * 0.03
-      const botX = side * R * 0.075
-      const botY = -R * 0.015 + depth * R * 0.02
-      const width = R * (0.016 + 0.006 * Math.abs(side))
-      const shadeTone = depth > 0 ? 0x272b33 : 0x14171d
-      t.moveTo(topX, topY)
-        .quadraticCurveTo(outX * 1.25, topY + (outY - topY) * 0.4, outX, outY)
-        .quadraticCurveTo(outX * 1.05, outY + (botY - outY) * 0.7, botX, botY)
-        .stroke({ width, color: shadeTone, cap: 'round' })
-      t.moveTo(topX, topY)
-        .quadraticCurveTo(outX * 1.25, topY + (outY - topY) * 0.4, outX, outY)
-        .stroke({ width: width * 0.4, color: 0xffffff, alpha: depth > 0 ? 0.22 : 0.1, cap: 'round' })
+      const samples = 14
+      const points: number[] = []
+      for (let i = 0; i <= samples; i++) {
+        const s = i / samples
+        // Radial distance from the axis and height along the arm (quadratic bow).
+        const rho = R * (0.02 + (0.14 - 0.02) * Math.sin(s * Math.PI) + 0.055 * s)
+        const y = -R * 0.21 + s * R * 0.195
+        points.push(Math.cos(phi) * rho, y + Math.sin(phi) * rho * COS_T)
+      }
+      const lit = 0.5 + 0.5 * Math.cos(phi - lightAngle)
+      const tone = darken(0x2e333d, 0.45 + lit * 0.55)
+      t.poly(points, false).stroke({ width: R * 0.018, color: tone, cap: 'round', join: 'round' })
+      t.poly(points, false).stroke({
+        width: R * 0.007,
+        color: 0xffffff,
+        alpha: 0.08 + lit * 0.2,
+        cap: 'round',
+        join: 'round',
+      })
     }
 
     // Contact shadow.
@@ -407,46 +415,107 @@ export class Wheel3D {
     if (Math.sin(rotation) > 0) handle(rotation)
     else handle(rotation + Math.PI)
 
-    // Jewel: facets spin with the rotor under a fixed top-left light.
-    const gy = -R * 0.39
-    const gr = R * 0.052
-    const lightAngle = -Math.PI * 0.75
-    let bestLit = 0
-    let bestMid = 0
-    for (let k = 0; k < 6; k++) {
-      const a0 = rotation + (k * TAU) / 6 - Math.PI / 2
-      const a1 = a0 + TAU / 6
+    this.drawJewel(rotation, lightAngle)
+  }
+
+  /**
+   * The jewel is a real solid now: a brilliant-cut with an octagonal table,
+   * trapezoid crown facets and a front pavilion, defined as 3D vertices,
+   * rotated about the VERTICAL axis and projected like the rest of the wheel.
+   * Facets foreshorten and change shape as it turns — the old screen-plane
+   * fan read as a 2D pinwheel; this reads as a stone.
+   */
+  private drawJewel(rotation: number, lightAngle: number) {
+    const R = this.radius
+    const t = this.turretG
+    const N = 8
+
+    const girdleR = R * 0.055
+    const girdleY = -R * 0.372
+    const tableR = R * 0.032
+    const tableY = -R * 0.418
+    const culetY = -R * 0.335
+
+    // Project a point on a horizontal ring of the (vertical) stone.
+    const ring = (angle: number, r: number, y: number) => ({
+      x: Math.cos(angle) * r,
+      y: y + Math.sin(angle) * r * COS_T,
+    })
+    const angleAt = (k: number) => rotation + (k * TAU) / N + TAU / 16
+
+    // Collet: a small turned cup with prongs gripping the girdle.
+    t.ellipse(0, girdleY + R * 0.012, girdleR * 0.95, girdleR * 0.95 * COS_T).fill(0x101318)
+    t.ellipse(0, girdleY + R * 0.006, girdleR * 0.8, girdleR * 0.8 * COS_T).fill(0x272b33)
+
+    // Front pavilion facets (only the camera-facing half is visible).
+    for (let k = 0; k < N; k++) {
+      const a0 = angleAt(k)
+      const a1 = angleAt(k + 1)
       const mid = (a0 + a1) / 2
-      const lit = (Math.cos(mid - lightAngle) + 1) / 2
+      if (Math.sin(mid) < -0.15) continue
+      const p0 = ring(a0, girdleR, girdleY)
+      const p1 = ring(a1, girdleR, girdleY)
+      const lit = 0.5 + 0.5 * Math.cos(mid - lightAngle)
+      // Adjacent pavilion facets flip bright/dark — the brilliant signature.
+      const flash = k % 2 === 0 ? 0.5 + lit * 0.5 : 0.18 + lit * 0.28
+      const shade = Math.round(0x3a + flash * 0x9a)
+      const color = (shade << 16) | (Math.min(255, shade + 18) << 8) | Math.min(255, shade + 70)
+      t.poly([p0.x, p0.y, p1.x, p1.y, 0, culetY])
+        .fill({ color, alpha: 0.97 })
+        .stroke({ width: 0.8, color: 0x44546e, alpha: 0.8 })
+    }
+
+    // Crown facets: trapezoids from the girdle up to the table ring.
+    let bestLit = 0
+    let bestPoint = { x: 0, y: 0 }
+    for (let k = 0; k < N; k++) {
+      const a0 = angleAt(k)
+      const a1 = angleAt(k + 1)
+      const mid = (a0 + a1) / 2
+      const g0 = ring(a0, girdleR, girdleY)
+      const g1 = ring(a1, girdleR, girdleY)
+      const t0 = ring(a0, tableR, tableY)
+      const t1 = ring(a1, tableR, tableY)
+      const lit = 0.5 + 0.5 * Math.cos(mid - lightAngle)
+      // Sky reflection on facets tipping toward the camera.
+      const sky = Math.max(0, Math.sin(mid)) * 0.35
+      const level = Math.min(1, 0.3 + lit * 0.6 + sky)
+      const shade = Math.round(0x6a + level * 0x92)
+      const color =
+        (Math.min(255, shade) << 16) | (Math.min(255, shade + 14) << 8) | Math.min(255, shade + 46)
+      t.poly([g0.x, g0.y, g1.x, g1.y, t1.x, t1.y, t0.x, t0.y])
+        .fill({ color, alpha: 0.97 })
+        .stroke({ width: 0.8, color: 0x5a6c8a, alpha: 0.85 })
       if (lit > bestLit) {
         bestLit = lit
-        bestMid = mid
+        bestPoint = { x: (g0.x + g1.x + t0.x + t1.x) / 4, y: (g0.y + g1.y + t0.y + t1.y) / 4 }
       }
-      const shade = Math.round(0x74 + lit * 0x80)
-      const color = (shade << 16) | ((Math.min(255, shade + 24) & 0xff) << 8) | 0xff
-      t.poly([
-        0,
-        gy,
-        Math.cos(a0) * gr,
-        gy + Math.sin(a0) * gr * 0.85,
-        Math.cos(a1) * gr,
-        gy + Math.sin(a1) * gr * 0.85,
-      ])
-        .fill({ color, alpha: 0.96 })
-        .stroke({ width: 1, color: 0x5f7796, alpha: 0.9 })
     }
-    t.poly([0, gy - gr * 0.45, gr * 0.38, gy, 0, gy + gr * 0.45, -gr * 0.38, gy]).fill({
+
+    // The table: a bright octagon that keeps its elliptical foreshortening.
+    const table: number[] = []
+    for (let k = 0; k < N; k++) {
+      const p = ring(angleAt(k), tableR, tableY)
+      table.push(p.x, p.y)
+    }
+    t.poly(table).fill({ color: 0xe9f2fc, alpha: 0.95 }).stroke({ width: 0.8, color: 0x9db4d4 })
+    // A soft moving reflection inside the table.
+    const rx = Math.cos(rotation + 0.7) * tableR * 0.35
+    t.ellipse(rx, tableY + tableR * 0.1 * COS_T, tableR * 0.5, tableR * 0.3).fill({
       color: 0xffffff,
-      alpha: 0.55,
+      alpha: 0.75,
     })
-    // Glint: flares up whenever the best-lit facet aligns with the light.
-    const glint = Math.pow(bestLit, 14)
-    if (glint > 0.25) {
-      const sx = Math.cos(bestMid) * gr * 0.55
-      const sy = gy + Math.sin(bestMid) * gr * 0.5
-      const s = R * 0.02 * glint
-      t.rect(sx - s, sy - s * 0.14, s * 2, s * 0.28).fill({ color: 0xffffff, alpha: glint })
-      t.rect(sx - s * 0.14, sy - s, s * 0.28, s * 2).fill({ color: 0xffffff, alpha: glint })
+
+    // Bright girdle line.
+    t.ellipse(0, girdleY, girdleR, girdleR * COS_T).stroke({ width: 1, color: 0xdfe9f5, alpha: 0.8 })
+
+    // Glint flares when the best-lit crown facet sweeps the light.
+    const glint = Math.pow(bestLit, 12)
+    if (glint > 0.3) {
+      const s = R * 0.024 * glint
+      t.rect(bestPoint.x - s, bestPoint.y - s * 0.13, s * 2, s * 0.26).fill({ color: 0xffffff, alpha: glint })
+      t.rect(bestPoint.x - s * 0.13, bestPoint.y - s, s * 0.26, s * 2).fill({ color: 0xffffff, alpha: glint })
+      t.circle(bestPoint.x, bestPoint.y, s * 0.22).fill({ color: 0xffffff, alpha: glint })
     }
   }
 
