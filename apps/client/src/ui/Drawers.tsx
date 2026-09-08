@@ -86,16 +86,35 @@ function Players() {
 
 function History({ token }: { token: string }) {
   const queryClient = useQueryClient()
-  const lastRoundId = useGame((state) => state.lastResult && state.roundId)
+  const lastRoundId = useGame((state) => (state.lastResult && state.roundId) || state.bj.lastReturned)
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: ['history'] })
   }, [lastRoundId, queryClient])
 
   const historyQuery = useQuery({ queryKey: ['history'], queryFn: () => api.history(token) })
-  const rows = historyQuery.data ?? []
+  const game = useGame((state) => state.table?.game ?? 'roulette')
+  const roulette = historyQuery.data?.roulette ?? []
+  const blackjack = historyQuery.data?.blackjack ?? []
+
+  if (game === 'blackjack') {
+    return (
+      <ul className="history">
+        {blackjack.map((hand) => (
+          <li key={hand.id}>
+            <span className="spot">{hand.outcome}</span>
+            <span className="amount">-${hand.bet}</span>
+            <span className={hand.returned > 0 ? 'win' : 'lose'}>
+              {hand.returned > 0 ? `+$${hand.returned}` : '—'}
+            </span>
+          </li>
+        ))}
+        {blackjack.length === 0 && <li className="muted">no hands yet</li>}
+      </ul>
+    )
+  }
   return (
     <ul className="history">
-      {rows.map((row) => (
+      {roulette.map((row) => (
         <li key={`${row.roundId}:${row.spot}:${row.amount}`}>
           <span className={`result-dot small ${dotColor(row.number)}`}>{row.number}</span>
           <span className="spot">{row.spot}</span>
@@ -105,7 +124,7 @@ function History({ token }: { token: string }) {
           </span>
         </li>
       ))}
-      {rows.length === 0 && <li className="muted">no settled bets yet</li>}
+      {roulette.length === 0 && <li className="muted">no settled bets yet</li>}
     </ul>
   )
 }

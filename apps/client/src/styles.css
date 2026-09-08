@@ -669,3 +669,594 @@ body {
 .chat-input button:disabled {
   opacity: 0.4;
 }
+
+/* ---------------------------------- auth ---------------------------------- */
+
+.auth {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.auth h1 {
+  font-size: 56px;
+  margin: 0;
+  letter-spacing: 3px;
+  text-shadow: 0 0 60px rgba(231, 200, 106, 0.35);
+}
+
+.tagline {
+  color: #9fb3a8;
+  margin: 0 0 14px;
+}
+
+.auth-card {
+  width: 340px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(8, 14, 11, 0.7);
+  border: 1px solid rgba(231, 200, 106, 0.2);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.auth-tabs button {
+  flex: 1;
+  padding: 9px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #9fb3a8;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-tabs button.active {
+  background: rgba(231, 200, 106, 0.16);
+  color: #e7c86a;
+}
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.auth-card input {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #2c4a3d;
+  background: rgba(13, 31, 24, 0.8);
+  color: #eef1ec;
+  font-size: 15px;
+  outline: none;
+}
+
+.auth-card input:focus {
+  border-color: #e7c86a;
+}
+
+.auth-card form > button {
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(180deg, #f0d582, #d9b654);
+  color: #1c1505;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.auth-card form > button:disabled {
+  opacity: 0.5;
+}
+
+.auth-card .error {
+  color: #ff8b8b;
+  margin: 0;
+  font-size: 13px;
+}
+
+.auth-card .hint {
+  color: #71847a;
+  font-size: 12px;
+  margin: 0;
+}
+
+/* ---------------------------------- lobby ---------------------------------- */
+
+.lobby {
+  display: flex;
+  min-height: 100vh;
+}
+
+.lobby-side {
+  width: 220px;
+  padding: 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  background: rgba(0, 0, 0, 0.35);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.brand.big {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  padding-left: 8px;
+}
+
+.categories {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.categories button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  color: #9fb3a8;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.categories button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.categories button.active {
+  background: rgba(231, 200, 106, 0.14);
+  color: #e7c86a;
+}
+
+.cat-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.admin-link {
+  margin-top: auto;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(231, 200, 106, 0.4);
+  background: transparent;
+  color: #e7c86a;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.lobby-main {
+  flex: 1;
+  padding: 22px 28px;
+  overflow-y: auto;
+}
+
+.lobby-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.lobby-head h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 1px;
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(8, 14, 11, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.profile-balance {
+  color: #e7c86a;
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.profile-nick {
+  color: #cfe3d8;
+  font-size: 14px;
+}
+
+.profile button {
+  border: none;
+  background: transparent;
+  color: #9fb3a8;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.profile button:hover {
+  color: #eef1ec;
+}
+
+.tables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 18px;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(160deg, rgba(23, 73, 58, 0.55), rgba(8, 17, 13, 0.9));
+  color: #eef1ec;
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  padding: 0;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.tile:hover {
+  transform: translateY(-4px);
+  border-color: rgba(231, 200, 106, 0.5);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.tile-blackjack {
+  background: linear-gradient(160deg, rgba(36, 49, 77, 0.55), rgba(10, 12, 20, 0.9));
+}
+
+.tile-art {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.art-wheel {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #3a2410 0 34%, transparent 34.5%),
+    repeating-conic-gradient(#c22f2f 0deg 9.7deg, #17181d 9.7deg 19.4deg);
+  border: 6px solid #5b3a1e;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: transform 0.6s;
+}
+
+.tile:hover .art-wheel {
+  transform: rotate(120deg);
+}
+
+.art-cards {
+  display: flex;
+}
+
+.art-cards i {
+  width: 58px;
+  height: 82px;
+  border-radius: 8px;
+  background: #f7f5ee;
+  color: #1c1f26;
+  font-style: normal;
+  font-weight: 800;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  transform: rotate(-8deg);
+  transition: transform 0.25s;
+}
+
+.art-cards i:last-child {
+  color: #c22f2f;
+  transform: rotate(9deg) translate(-14px, 6px);
+}
+
+.tile:hover .art-cards i:first-child {
+  transform: rotate(-14deg) translateX(-4px);
+}
+
+.tile:hover .art-cards i:last-child {
+  transform: rotate(15deg) translate(-10px, 4px);
+}
+
+.tile-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tile-name {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.tile-game {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #9fb3a8;
+}
+
+.tile-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.tile-stakes {
+  color: #e7c86a;
+  font-weight: 700;
+}
+
+.tile-players {
+  color: #7fe3a8;
+}
+
+.tile-cta {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e7c86a;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tile:hover .tile-cta {
+  opacity: 1;
+}
+
+/* ---------------------------------- admin ---------------------------------- */
+
+.admin {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 26px 20px 60px;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.admin-head h1 {
+  font-size: 22px;
+}
+
+.admin-head button {
+  border: none;
+  background: transparent;
+  color: #9fb3a8;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.admin-section {
+  margin-top: 26px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(8, 14, 11, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-section h2 {
+  margin: 0 0 14px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #e7c86a;
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-row + .admin-row {
+  margin-top: 8px;
+}
+
+.admin-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #cfe3d8;
+}
+
+.admin-row input,
+.admin-row select {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef1ec;
+  font-size: 14px;
+  outline: none;
+}
+
+.admin-row input[type='number'] {
+  width: 90px;
+}
+
+.admin-row button {
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(231, 200, 106, 0.85);
+  color: #1c1505;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-row button:disabled {
+  opacity: 0.4;
+}
+
+.admin-row button.danger {
+  background: rgba(194, 47, 47, 0.85);
+  color: #fff;
+}
+
+.table-row.closed {
+  opacity: 0.5;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dot.roulette {
+  background: #c22f2f;
+}
+
+.dot.blackjack {
+  background: #3f7fc4;
+}
+
+.admin-tables {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ------------------------------ table chrome ------------------------------ */
+
+.table-name {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 8px 8px;
+  border-radius: 14px;
+  background: rgba(8, 14, 11, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.table-name .back {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef1ec;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.table-name .name {
+  display: block;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.table-name .stakes {
+  display: block;
+  font-size: 11px;
+  color: #e7c86a;
+}
+
+.center-note {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #9fb3a8;
+}
+
+.center-note button {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  background: rgba(231, 200, 106, 0.85);
+  color: #1c1505;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ------------------------------- blackjack -------------------------------- */
+
+.bj-actions {
+  position: absolute;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(8, 14, 11, 0.75);
+  border: 1px solid rgba(231, 200, 106, 0.35);
+  backdrop-filter: blur(12px);
+  animation: pop 0.2s ease-out;
+}
+
+.bj-actions button {
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: none;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  color: #fff;
+}
+
+.bj-actions .hit {
+  background: linear-gradient(180deg, #2c9260, #1a6b42);
+}
+
+.bj-actions .stand {
+  background: linear-gradient(180deg, #c65442, #9c3325);
+}
+
+.bj-actions .double {
+  background: linear-gradient(180deg, #3f7fc4, #2a5da0);
+}
+
+.bj-actions button:hover {
+  filter: brightness(1.15);
+}
+
+.turn-clock .countdown {
+  background: rgba(231, 200, 106, 0.2);
+  color: #e7c86a;
+}

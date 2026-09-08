@@ -9,25 +9,47 @@ const PHASE_LABEL: Record<string, string> = {
   result: 'RESULT',
 }
 
-function Countdown() {
-  const bettingEndsAt = useGame((state) => state.bettingEndsAt)
+export function Countdown({ endsAt }: { endsAt: string | null }) {
   const [left, setLeft] = useState(0)
   useEffect(() => {
-    if (!bettingEndsAt) return
-    const target = new Date(bettingEndsAt).getTime()
+    if (!endsAt) return
+    const target = new Date(endsAt).getTime()
     const tick = () => setLeft(Math.max(0, Math.ceil((target - Date.now()) / 1000)))
     tick()
     const interval = setInterval(tick, 200)
     return () => clearInterval(interval)
-  }, [bettingEndsAt])
-  if (!bettingEndsAt) return null
+  }, [endsAt])
+  if (!endsAt) return null
   return <span className={`countdown ${left <= 5 ? 'urgent' : ''}`}>{left}</span>
 }
 
-export function TopBar() {
+export function TableName() {
+  const table = useGame((state) => state.table)
+  if (!table) return null
+  return (
+    <div className="table-name">
+      <button type="button" className="back" onClick={() => (window.location.hash = '#/')} title="Back to lobby">
+        ←
+      </button>
+      <div>
+        <span className="name">{table.name}</span>
+        <span className="stakes">
+          ${table.minStake}–${table.maxStake}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export function TopBar({
+  phaseLabel,
+  phaseClass,
+  endsAt,
+}: { phaseLabel?: string; phaseClass?: string; endsAt?: string | null } = {}) {
   const nickname = useGame((state) => state.nickname)
   const balance = useGame((state) => state.balance)
   const phase = useGame((state) => state.phase)
+  const bettingEndsAt = useGame((state) => state.bettingEndsAt)
   const connection = useGame((state) => state.connection)
 
   return (
@@ -35,8 +57,8 @@ export function TopBar() {
       <span className="brand">
         ron<span className="accent">do</span>
       </span>
-      <span className={`phase phase-${phase}`}>
-        {PHASE_LABEL[phase]} <Countdown />
+      <span className={`phase phase-${phaseClass ?? phase}`}>
+        {phaseLabel ?? PHASE_LABEL[phase]} <Countdown endsAt={endsAt !== undefined ? endsAt : bettingEndsAt} />
       </span>
       <span className="me">
         {connection !== 'open' && <span className="conn">reconnecting…</span>}

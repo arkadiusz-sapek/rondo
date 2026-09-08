@@ -1,5 +1,16 @@
 import { create } from 'zustand'
-import type { Bet, ChatMessage, Phase, PlayerPublic, RecentResult, ServerEvent } from '@rondo/protocol'
+import type {
+  Bet,
+  BjDealer,
+  BjPhase,
+  BjSeat,
+  ChatMessage,
+  Phase,
+  PlayerPublic,
+  RecentResult,
+  ServerEvent,
+  TableMeta,
+} from '@rondo/protocol'
 
 export interface LastResult {
   number: number
@@ -26,6 +37,16 @@ interface GameState {
   selectedChip: number
   chat: ChatMessage[]
   chatUnread: number
+  table: TableMeta | null
+  bj: {
+    phase: BjPhase
+    bettingEndsAt: string | null
+    seats: BjSeat[]
+    dealer: BjDealer
+    turn: { playerId: string; endsAt: string } | null
+    myBet: number
+    lastReturned: number | null
+  }
   setConnection: (connection: GameState['connection']) => void
   setSelectedChip: (chip: number) => void
   dismissToast: () => void
@@ -55,6 +76,16 @@ export const useGame = create<GameState>((set) => ({
   selectedChip: 5,
   chat: [],
   chatUnread: 0,
+  table: null,
+  bj: {
+    phase: 'betting',
+    bettingEndsAt: null,
+    seats: [],
+    dealer: { cards: [], total: 0, hiding: true },
+    turn: null,
+    myBet: 0,
+    lastReturned: null,
+  },
   setConnection: (connection) => set({ connection }),
   setSelectedChip: (selectedChip) => set({ selectedChip }),
   dismissToast: () => set({ toast: null }),
@@ -76,9 +107,89 @@ export const useGame = create<GameState>((set) => ({
           recentResults: p.recentResults,
           spinTarget: p.phase === 'spinning' || p.phase === 'result' ? p.lastNumber : null,
           chat: p.chatHistory,
+          table: p.table,
         })
         return
       }
+      case 'bj_snapshot': {
+        const p = event.payload
+        set({
+          playerId: p.you.id,
+          nickname: p.you.nickname,
+          balance: p.you.balance,
+          players: p.players,
+          chat: p.chatHistory,
+          table: p.table,
+          bj: {
+            phase: p.phase,
+            bettingEndsAt: p.bettingEndsAt,
+            seats: p.seats,
+            dealer: p.dealer,
+            turn: p.turn,
+            myBet: p.seats.find((seat) => seat.playerId === p.you.id)?.bet ?? 0,
+            lastReturned: null,
+          },
+        })
+        return
+      }
+      case 'bj_phase':
+        set((state) => ({
+          bj: {
+            ...state.bj,
+            phase: event.payload.phase,
+            bettingEndsAt: event.payload.bettingEndsAt,
+            ...(event.payload.phase === 'betting'
+              ? {
+                  seats: [],
+                  dealer: { cards: [], total: 0, hiding: true },
+                  turn: null,
+                  myBet: 0,
+                  lastReturned: null,
+                }
+              : {}),
+          },
+        }))
+        return
+      case 'bj_bet_accepted':
+        set((state) => ({
+          balance: event.payload.balance,
+          bj: { ...state.bj, myBet: event.payload.bet },
+        }))
+        return
+      case 'bj_deal':
+        set((state) => ({
+          bj: { ...state.bj, seats: event.payload.seats, dealer: event.payload.dealer },
+        }))
+        return
+      case 'bj_card': {
+        const { to, card, total, busted } = event.payload
+        set((state) => {
+          if (to === 'dealer') {
+            const dealer = { ...state.bj.dealer, cards: [...state.bj.dealer.cards, card], total }
+            return { bj: { ...state.bj, dealer } }
+          }
+          const seats = state.bj.seats.map((seat) =>
+            seat.playerId === to ? { ...seat, cards: [...seat.cards, card], total, busted } : seat,
+          )
+          return { bj: { ...state.bj, seats } }
+        })
+        return
+      }
+      case 'bj_turn':
+        set((state) => ({ bj: { ...state.bj, turn: event.payload } }))
+        return
+      case 'bj_settled':
+        set((state) => ({
+          balance: event.payload.balance,
+          bj: {
+            ...state.bj,
+            seats: event.payload.seats,
+            dealer: event.payload.dealer,
+            turn: null,
+            lastReturned: event.payload.returned,
+          },
+        }))
+        return
       case 'chat_message':
         set((state) => ({
           chat: [...state.chat, event.payload].slice(-100),

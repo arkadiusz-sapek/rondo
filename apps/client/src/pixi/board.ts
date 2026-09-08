@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, type FederatedPointerEvent, type PointData } from 'pixi.js'
 import { colorOf, type Bet, type BetSpot } from '@rondo/protocol'
+import { chipTierPixi } from '../ui/chipColors'
 import { palette } from './palette'
 
 interface SpotRect {
@@ -89,7 +90,8 @@ export class Board {
     }
     for (const [spot, amount] of mine) {
       const rect = this.rects.find((candidate) => candidate.spot === spot)
-      if (rect) this.chips.addChild(chip(rect, amount, palette.chip, 1))
+      // My chips wear the denomination tier color, same as the dock.
+      if (rect) this.chips.addChild(chip(rect, amount, chipTierPixi(amount), 1))
     }
   }
 
@@ -223,7 +225,7 @@ function chip(rect: SpotRect, amount: number, color: number, alpha: number) {
   g.circle(cx, cy, 10).stroke({ width: 1, color: 0xffffff, alpha: alpha * 0.4 })
   const label = new Text({
     text: String(amount),
-    style: { fill: 0x101010, fontSize: 11, fontFamily: 'Arial', fontWeight: '800' },
+    style: { fill: 0xffffff, fontSize: 11, fontFamily: 'Arial', fontWeight: '800' },
   })
   label.anchor.set(0.5)
   label.position.set(cx, cy)

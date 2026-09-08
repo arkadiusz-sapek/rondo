@@ -16,11 +16,13 @@ interface DragState {
  * spot), or drag a chip straight onto the board — the drop position goes
  * through the same delegated hit-test as a tap.
  */
-export function Dock() {
+export function Dock({ mode = 'roulette' }: { mode?: 'roulette' | 'blackjack' }) {
   const selected = useGame((state) => state.selectedChip)
   const setChip = useGame((state) => state.setSelectedChip)
-  const phase = useGame((state) => state.phase)
+  const roulettePhase = useGame((state) => state.phase)
+  const bjPhase = useGame((state) => state.bj.phase)
   const myBets = useGame((state) => state.myBets)
+  const bjMyBet = useGame((state) => state.bj.myBet)
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
   dragRef.current = drag
@@ -49,8 +51,9 @@ export function Dock() {
     }
   }, [drag !== null])
 
-  const total = myBets.reduce((sum, bet) => sum + bet.amount, 0)
-  const disabled = phase !== 'betting'
+  const bj = mode === 'blackjack'
+  const disabled = bj ? bjPhase !== 'betting' : roulettePhase !== 'betting'
+  const total = bj ? bjMyBet : myBets.reduce((sum, bet) => sum + bet.amount, 0)
 
   return (
     <>
@@ -61,9 +64,12 @@ export function Dock() {
               key={value}
               type="button"
               className={`chip chip-${value} ${selected === value ? 'selected' : ''}`}
-              onClick={() => setChip(value)}
+              onClick={() => {
+                setChip(value)
+                if (bj && !disabled) sendCommand({ type: 'bj_bet', payload: { amount: value } })
+              }}
               onPointerDown={(event) => {
-                if (disabled) return
+                if (bj || disabled) return
                 setChip(value)
                 setDrag({ amount: value, x: event.clientX, y: event.clientY })
               }}
@@ -72,19 +78,21 @@ export function Dock() {
             </button>
           ))}
         </div>
-        <span className="staked">staked ${total}</span>
+        <span className="staked">{bj ? `bet $${total}` : `staked $${total}`}</span>
         <div className="bet-actions">
+          {!bj && (
+            <button
+              type="button"
+              disabled={disabled || total === 0}
+              onClick={() => sendCommand({ type: 'undo_bet', payload: {} })}
+            >
+              undo
+            </button>
+          )}
           <button
             type="button"
             disabled={disabled || total === 0}
-            onClick={() => sendCommand({ type: 'undo_bet', payload: {} })}
-          >
-            undo
-          </button>
-          <button
-            type="button"
-            disabled={disabled || total === 0}
-            onClick={() => sendCommand({ type: 'clear_bets', payload: {} })}
+            onClick={() => sendCommand({ type: bj ? 'bj_clear' : 'clear_bets', payload: {} })}
           >
             clear
           </button>

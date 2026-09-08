@@ -1,18 +1,20 @@
 import { parseServerEvent, type ClientCommand } from '@rondo/protocol'
+import { SERVER_URL } from './api'
 import { useGame } from './store/game'
 
-export const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3200'
 const WS_URL = SERVER_URL.replace(/^http/, 'ws') + '/ws'
 
 let socket: WebSocket | null = null
 let retryMs = 1000
 let intentionalClose = false
 
-/** One socket per tab; reconnects with backoff and re-syncs via table_snapshot. */
-export function connect(token: string) {
+/** One socket per tab; reconnects with backoff and re-syncs via snapshot. */
+export function connect(token: string, tableId: string) {
   intentionalClose = false
   useGame.getState().setConnection('connecting')
-  socket = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`)
+  socket = new WebSocket(
+    `${WS_URL}?token=${encodeURIComponent(token)}&table=${encodeURIComponent(tableId)}`,
+  )
 
   socket.onopen = () => {
     retryMs = 1000
@@ -30,8 +32,8 @@ export function connect(token: string) {
   }
   socket.onclose = (event) => {
     useGame.getState().setConnection('closed')
-    if (intentionalClose || event.code === 4003) return
-    setTimeout(() => connect(token), retryMs)
+    if (intentionalClose || event.code === 4003 || event.code === 4004 || event.code === 4005) return
+    setTimeout(() => connect(token, tableId), retryMs)
     retryMs = Math.min(retryMs * 2, 10_000)
   }
 }
