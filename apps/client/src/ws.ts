@@ -32,7 +32,14 @@ export function connect(token: string, tableId: string) {
   }
   socket.onclose = (event) => {
     useGame.getState().setConnection('closed')
-    if (intentionalClose || event.code === 4003 || event.code === 4004 || event.code === 4005) return
+    if (event.code === 4003) {
+      // Dead token (e.g. the DB was reset) — force a clean sign-in.
+      localStorage.removeItem('rondo-auth')
+      window.location.hash = '#/'
+      window.location.reload()
+      return
+    }
+    if (intentionalClose || event.code === 4004 || event.code === 4005) return
     setTimeout(() => connect(token, tableId), retryMs)
     retryMs = Math.min(retryMs * 2, 10_000)
   }

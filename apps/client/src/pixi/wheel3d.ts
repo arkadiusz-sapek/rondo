@@ -1,4 +1,4 @@
-import { Container, Graphics, Matrix, Text } from 'pixi.js'
+import { Container, Graphics, Matrix, Text, Texture } from 'pixi.js'
 import { WHEEL_NUMBERS, colorOf } from '@rondo/protocol'
 import { palette, pocketFill } from './palette'
 
@@ -12,17 +12,26 @@ const IDLE_SPEED = 0.0004
 const SPIN_SPEED = 0.0014
 const BALL_LAUNCH = -0.0042
 
-const OUTER_TRACK = 0.98
-const POCKET_OUT = 0.92
-const POCKET_IN = 0.7
-const BALL_REST = 0.8
-const LABEL_R = 0.81
+/* Ring layout (fractions of R), outside → in:
+   wood rim 1.18..1.05 · ball track 1.04..0.93 · apron+diamonds 0.93..0.80 ·
+   chrome · number band 0.79..0.63 · stepped-down pockets 0.62..0.47 · cone. */
+const OUTER_TRACK = 0.985
+const APRON_OUT = 0.93
+const NUM_OUT = 0.79
+const NUM_IN = 0.63
+const POCKET_OUT = 0.62
+const POCKET_IN = 0.47
+const BALL_REST = 0.545
+const LABEL_R = 0.71
+const CONE_R = 0.46
+/** How far (in R) the pocket band sits below the number band. */
+const STEP_DROP = 0.045
 
 type Mode = 'idle' | 'spinning' | 'landing' | 'landed'
 
 const LABEL_MATRIX = new Matrix()
+const CONE_MATRIX = new Matrix()
 
-/** Shortest signed angular distance, always in [-π, π]. */
 function normalizeAngle(a: number) {
   return a - TAU * Math.round(a / TAU)
 }
@@ -32,60 +41,120 @@ function smoothstep(edge0: number, edge1: number, x: number) {
   return t * t * (3 - 2 * t)
 }
 
-/**
- * The landing is a boundary problem solved backwards: the target pocket is
- * known when the flight starts, so we derive the launch velocity that makes
- * plain kinematics — rim orbit, spiral drop, pocket capture with damped
- * bounces — arrive exactly in that pocket. Linear ω profiles integrate to
- * quadratics, so the required initial speed falls out of a linear equation;
- * the free integer (extra revolutions) is chosen to keep it natural.
- */
-interface FlightPlan {
-  t0: number
-  /** Phase durations: rim orbit / spiral drop / capture-bounce. */
-  A: number
-  B: number
-  C: number
-  ball0: number
-  w0: number
-  wDrop: number
-  /** Deterministic rotor profile during the flight. */
-  rot0: number
-  wWheel0: number
-  wWheel1: number
-  pocketAngle: number
+function darken(color: number, factor: number): number {
+  const r = ((color >> 16) & 0xff) * factor
+  const g = ((color >> 8) & 0xff) * factor
+  const b = (color & 0xff) * factor
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)
 }
 
+/* ------------------------------ wood material ------------------------------ */
+
+const woodCache = new Map<string, Texture>()
+
+/** Procedural wood: base tone + wavy grain strokes + a few heavy growth lines. */
+function woodTexture(base: string, dark: string, light: string): Texture {
+  const key = base + dark
+  const cached = woodCache.get(key)
+  if (cached) return cached
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = base
+  ctx.fillRect(0, 0, 512, 256)
+
+  const grain = (color: string, alpha: number, width: number) => {
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha
+    ctx.lineWidth = width
+    const y = Math.random() * 256
+    const wobble = 2 + Math.random() * 7
+    ctx.beginPath()
+    ctx.moveTo(-20, y)
+    for (let x = 0; x <= 532; x += 32) {
+      ctx.lineTo(x, y + Math.sin(x * 0.02 + y) * wobble + (Math.random() - 0.5) * 3)
+    }
+    ctx.stroke()
+  }
+  for (let i = 0; i < 70; i++) grain(i % 2 ? dark : light, 0.04 + Math.random() * 0.09, 0.5 + Math.random() * 2)
+  for (let i = 0; i < 7; i++) grain(dark, 0.16 + Math.random() * 0.1, 2.5 + Math.random() * 2.5)
+  ctx.globalAlpha = 1
+
+  const texture = Texture.from(canvas)
+  woodCache.set(key, texture)
+  return texture
+}
+
+function woodFill(texture: Texture, halfWidth: number, halfHeight: number) {
+  return {
+    texture,
+    matrix: new Matrix((halfWidth * 2) / 512, 0, 0, (halfHeight * 2) / 256, -halfWidth, -halfHeight),
+  }
+}
+
+/**
+ * Realistic pseudo-3D wheel, still 100% procedural. Static layers (wooden
+ * stator with a recessed ball track, chrome rails, diamond deflectors, the
+ * center turret) are drawn once; the rotor (number band, stepped-down
+ * pockets, spoked cone) is the only per-frame work. The cone is drawn flat
+ * a single time and spun with the same affine projection as the labels.
+ */
 export class Wheel3D {
   readonly view = new Container()
   private side = new Graphics()
+  private stator = new Graphics()
+  private cone = new Graphics()
   private pockets = new Graphics()
   private labels: Text[] = []
   private ballShadow = new Graphics()
   private ball = new Graphics()
+  private turret = new Container()
 
   private mode: Mode = 'idle'
   private rotation = Math.random() * TAU
   private speed = IDLE_SPEED
   private ballAngle = 0
   private target: number | null = null
-  private plan: FlightPlan | null = null
+  private plan: {
+    t0: number
+    A: number
+    B: number
+    C: number
+    ball0: number
+    w0: number
+    wDrop: number
+    rot0: number
+    wWheel0: number
+    wWheel1: number
+    pocketAngle: number
+  } | null = null
 
   constructor(private radius: number) {
-    this.view.addChild(this.side, this.pockets)
+    this.view.addChild(this.side, this.stator, this.cone, this.pockets)
     for (const num of WHEEL_NUMBERS) {
       const label = new Text({
         text: String(num),
-        style: { fill: palette.text, fontSize: radius * 0.075, fontFamily: 'Arial', fontWeight: '700' },
+        style: {
+          fill: palette.text,
+          fontSize: radius * 0.058,
+          fontFamily: 'Georgia, serif',
+          fontWeight: '700',
+        },
       })
       label.anchor.set(0.5)
       this.labels.push(label)
       this.view.addChild(label)
     }
-    this.view.addChild(this.ballShadow, this.ball)
-    this.ball.circle(0, 0, radius * 0.038).fill(0xf7f7f2)
-    this.ball.circle(-radius * 0.01, -radius * 0.012, radius * 0.014).fill(0xffffff)
-    this.ballShadow.ellipse(0, 0, radius * 0.04, radius * 0.02).fill({ color: 0x000000, alpha: 0.35 })
+    this.view.addChild(this.ballShadow, this.ball, this.turret)
+
+    this.drawStator()
+    this.drawConeFlat()
+    this.drawTurret()
+    this.ball.circle(0, 0, radius * 0.034).fill(0xf7f7f2)
+    this.ball.circle(-radius * 0.009, -radius * 0.011, radius * 0.012).fill(0xffffff)
+    this.ballShadow.ellipse(0, 0, radius * 0.036, radius * 0.018).fill({ color: 0x000000, alpha: 0.35 })
     this.setBallVisible(false)
   }
 
@@ -95,6 +164,205 @@ export class Wheel3D {
       y: Math.sin(angle) * r * COS_T - h * SIN_T,
     }
   }
+
+  /** Polyline along an ellipse arc — Graphics has no partial-ellipse pen. */
+  private arcPoints(r: number, from: number, to: number, h = 0): number[] {
+    const points: number[] = []
+    const steps = 40
+    for (let i = 0; i <= steps; i++) {
+      const angle = from + ((to - from) * i) / steps
+      const p = this.project(angle, r, h)
+      points.push(p.x, p.y)
+    }
+    return points
+  }
+
+  /* ------------------------------ static layers ------------------------------ */
+
+  private drawStator() {
+    const R = this.radius
+    const g = this.stator
+    const mahogany = woodTexture('#4a2413', '#2b1206', '#6b3a1d')
+    const depth = R * 0.16
+
+    // Side wall under the rim.
+    this.side.ellipse(0, depth, R * 1.18, R * 1.18 * COS_T).fill({ color: 0x241004 })
+    this.side.ellipse(0, depth * 0.55, R * 1.18, R * 1.18 * COS_T).fill({ color: 0x331a09 })
+
+    // Wooden top rim.
+    g.ellipse(0, 0, R * 1.18, R * 1.18 * COS_T)
+      .fill(woodFill(mahogany, R * 1.18, R * 1.18 * COS_T))
+      .stroke({ width: 2, color: 0x1c0d04 })
+    // Glossy light sweep on the upper rim.
+    g.poly(this.arcPoints(R * 1.11, -Math.PI * 0.88, -Math.PI * 0.12), false).stroke({
+      width: R * 0.09,
+      color: 0xffffff,
+      alpha: 0.09,
+      cap: 'round',
+    })
+    g.poly(this.arcPoints(R * 1.11, Math.PI * 0.2, Math.PI * 0.8), false).stroke({
+      width: R * 0.07,
+      color: 0x000000,
+      alpha: 0.14,
+      cap: 'round',
+    })
+
+    // Recessed ball track: dark channel with an inner shadow up top and a
+    // faint catch-light at the bottom, framed by chrome rails.
+    g.ellipse(0, 0, R * 1.04, R * 1.04 * COS_T).fill(0x21120a)
+    g.poly(this.arcPoints(R * 0.995, -Math.PI * 0.95, -Math.PI * 0.05), false).stroke({
+      width: R * 0.075,
+      color: 0x000000,
+      alpha: 0.5,
+      cap: 'round',
+    })
+    g.poly(this.arcPoints(R * 0.975, Math.PI * 0.15, Math.PI * 0.85), false).stroke({
+      width: R * 0.05,
+      color: 0xffe9c9,
+      alpha: 0.1,
+      cap: 'round',
+    })
+    g.ellipse(0, 0, R * 1.043, R * 1.043 * COS_T).stroke({ width: 2.5, color: 0xcdd2da, alpha: 0.9 })
+    g.ellipse(0, 0, R * 0.932, R * 0.932 * COS_T).stroke({ width: 2, color: 0xb9bec7, alpha: 0.8 })
+
+    // Apron between track and rotor — lighter wood, carries the deflectors.
+    g.ellipse(0, 0, R * APRON_OUT, R * APRON_OUT * COS_T).fill(
+      woodFill(woodTexture('#5b2f18', '#38180a', '#7d4423'), R * APRON_OUT, R * APRON_OUT * COS_T),
+    )
+    g.poly(this.arcPoints(R * 0.865, -Math.PI * 0.9, -Math.PI * 0.1), false).stroke({
+      width: R * 0.05,
+      color: 0xffffff,
+      alpha: 0.05,
+      cap: 'round',
+    })
+
+    // Eight diamond deflectors.
+    for (let k = 0; k < 8; k++) {
+      const angle = (k * TAU) / 8 + TAU / 16
+      const r = R * 0.865
+      const dirX = Math.cos(angle)
+      const dirY = Math.sin(angle) * COS_T
+      const norm = Math.hypot(dirX, dirY)
+      const px = -dirY / norm
+      const py = dirX / norm
+      const c = this.project(angle, r)
+      const len = R * 0.038
+      const wid = R * 0.013
+      g.poly([
+        c.x + (dirX / norm) * len,
+        c.y + (dirY / norm) * len,
+        c.x + px * wid,
+        c.y + py * wid,
+        c.x - (dirX / norm) * len,
+        c.y - (dirY / norm) * len,
+        c.x - px * wid,
+        c.y - py * wid,
+      ])
+        .fill({ color: 0xaeb3bc, alpha: 0.92 })
+        .stroke({ width: 1, color: 0x565b64 })
+      g.poly([
+        c.x + (dirX / norm) * len * 0.5,
+        c.y + (dirY / norm) * len * 0.5,
+        c.x + px * wid * 0.45,
+        c.y + py * wid * 0.45,
+        c.x - (dirX / norm) * len * 0.2,
+        c.y - (dirY / norm) * len * 0.2,
+      ]).fill({ color: 0xffffff, alpha: 0.6 })
+    }
+
+    // Chrome separator between stator and rotor.
+    g.ellipse(0, 0, R * 0.797, R * 0.797 * COS_T).stroke({ width: 2.5, color: 0xc9ced6, alpha: 0.9 })
+  }
+
+  /** The cone is drawn FLAT once; each frame it spins via setFromMatrix. */
+  private drawConeFlat() {
+    const CONE_PX = 140
+    const g = this.cone
+    const walnut = woodTexture('#6b3d1e', '#472510', '#8a5228')
+    g.circle(0, 0, CONE_PX).fill({
+      texture: walnut,
+      matrix: new Matrix((CONE_PX * 2) / 512, 0, 0, (CONE_PX * 2) / 256, -CONE_PX, -CONE_PX),
+    })
+    // Eight tapered segments — alternating sheen wedges + seam lines that
+    // visibly spin with the rotor.
+    for (let k = 0; k < 8; k++) {
+      const a0 = (k * TAU) / 8
+      const a1 = a0 + TAU / 16
+      g.moveTo(0, 0)
+        .arc(0, 0, CONE_PX, a0, a1)
+        .lineTo(0, 0)
+        .fill({ color: k % 2 ? 0xffffff : 0x000000, alpha: k % 2 ? 0.05 : 0.08 })
+      g.moveTo(0, 0)
+        .lineTo(Math.cos(a0) * CONE_PX, Math.sin(a0) * CONE_PX)
+        .stroke({ width: 2.5, color: 0x2a1408, alpha: 0.55 })
+    }
+    // Radial sheen: bright center falling off to a darker edge.
+    g.circle(0, 0, CONE_PX).stroke({ width: CONE_PX * 0.16, color: 0x000000, alpha: 0.22 })
+    g.circle(0, 0, CONE_PX * 0.66).fill({ color: 0xffffff, alpha: 0.04 })
+    g.circle(0, 0, CONE_PX * 0.4).fill({ color: 0xffffff, alpha: 0.05 })
+    g.circle(0, 0, CONE_PX * 0.18).fill({ color: 0xffe9c9, alpha: 0.08 })
+  }
+
+  private drawTurret() {
+    const R = this.radius
+    const t = new Graphics()
+
+    // Soft shadow cast on the cone.
+    t.ellipse(R * 0.02, R * 0.05, R * 0.19, R * 0.1).fill({ color: 0x000000, alpha: 0.3 })
+    // Turned base.
+    t.ellipse(0, R * 0.02, R * 0.15, R * 0.15 * COS_T).fill(0x14161c)
+    t.ellipse(0, 0, R * 0.13, R * 0.13 * COS_T).fill(0x23262e)
+    t.ellipse(0, -R * 0.006, R * 0.1, R * 0.1 * COS_T).fill(0x14161c)
+    // Column with a left-side catch light.
+    t.poly([-R * 0.032, 0, R * 0.032, 0, R * 0.022, -R * 0.14, -R * 0.022, -R * 0.14]).fill(0x1a1d24)
+    t.poly([-R * 0.028, -R * 0.002, -R * 0.012, -R * 0.002, -R * 0.008, -R * 0.14, -R * 0.02, -R * 0.14]).fill({
+      color: 0xffffff,
+      alpha: 0.14,
+    })
+    // Turned plates up the stem.
+    t.ellipse(0, -R * 0.14, R * 0.085, R * 0.085 * COS_T).fill(0x101318)
+    t.ellipse(0, -R * 0.155, R * 0.085, R * 0.085 * COS_T).fill(0x2b2f38)
+    t.ellipse(0, -R * 0.155, R * 0.05, R * 0.05 * COS_T).fill(0x1a1d24)
+    t.poly([-R * 0.018, -R * 0.155, R * 0.018, -R * 0.155, R * 0.013, -R * 0.26, -R * 0.013, -R * 0.26]).fill(0x191c22)
+    t.ellipse(0, -R * 0.26, R * 0.055, R * 0.055 * COS_T).fill(0x0e1116)
+    t.ellipse(0, -R * 0.272, R * 0.055, R * 0.055 * COS_T).fill(0x33373f)
+    t.poly([-R * 0.012, -R * 0.272, R * 0.012, -R * 0.272, R * 0.009, -R * 0.33, -R * 0.009, -R * 0.33]).fill(0x1a1d24)
+
+    // Faceted jewel.
+    const gy = -R * 0.385
+    const gr = R * 0.055
+    const facets = [0xeaf4ff, 0xbfd9ff, 0x9fc4f4, 0xd6e8ff, 0xaacdf6, 0xe0eeff]
+    for (let k = 0; k < 6; k++) {
+      const a0 = (k * TAU) / 6 - Math.PI / 2
+      const a1 = a0 + TAU / 6
+      t.poly([
+        0,
+        gy,
+        Math.cos(a0) * gr,
+        gy + Math.sin(a0) * gr * 0.85,
+        Math.cos(a1) * gr,
+        gy + Math.sin(a1) * gr * 0.85,
+      ])
+        .fill({ color: facets[k], alpha: 0.95 })
+        .stroke({ width: 1, color: 0x7d95b5, alpha: 0.8 })
+    }
+    t.poly([0, gy - gr * 0.5, gr * 0.4, gy, 0, gy + gr * 0.5, -gr * 0.4, gy]).fill({
+      color: 0xffffff,
+      alpha: 0.9,
+    })
+    // Sparkles.
+    for (const [sx, sy, s] of [
+      [gr * 0.55, gy - gr * 0.4, R * 0.012],
+      [-gr * 0.5, gy + gr * 0.25, R * 0.008],
+    ] as const) {
+      t.rect(sx - s, sy - s * 0.18, s * 2, s * 0.36).fill({ color: 0xffffff, alpha: 0.9 })
+      t.rect(sx - s * 0.18, sy - s, s * 0.36, s * 2).fill({ color: 0xffffff, alpha: 0.9 })
+    }
+
+    this.turret.addChild(t)
+  }
+
+  /* --------------------------------- control --------------------------------- */
 
   startSpin() {
     this.mode = 'spinning'
@@ -112,22 +380,17 @@ export class Wheel3D {
     const B = Math.min(1300, duration * 0.3)
     const A = duration - B - C
 
-    // Rotor: linear decel from its current speed for the whole flight.
     const rot0 = this.rotation
     const wWheel0 = this.speed
     const wWheel1 = IDLE_SPEED * 1.5
     const wheelAngleAt = (t: number) => rot0 + wWheel0 * t + ((wWheel1 - wWheel0) * t * t) / (2 * duration)
 
-    // Boundary: ball angle at capture (end of phase B) must equal the pocket's
-    // absolute angle at that moment, modulo full turns.
     const tCapture = A + B
     const targetAtCapture = wheelAngleAt(tCapture) + pocketAngle
     const wDrop = BALL_LAUNCH * 0.32
-    const wEnd = 0
 
     const ball0 = this.ballAngle
-    const sweepB = ((wDrop + wEnd) / 2) * B
-    // sweep needed in phase A, then w0 from the linear relation sweepA = (w0+wDrop)/2 · A.
+    const sweepB = (wDrop / 2) * B
     const base = normalizeAngle(targetAtCapture - ball0) - sweepB
     let bestW0 = BALL_LAUNCH
     let bestDiff = Infinity
@@ -173,22 +436,18 @@ export class Wheel3D {
         const D = A + B + C
         const t = Math.min(D, now - plan.t0)
 
-        // Deterministic rotor.
         this.rotation = plan.rot0 + plan.wWheel0 * t + ((plan.wWheel1 - plan.wWheel0) * t * t) / (2 * D)
         this.speed = plan.wWheel0 + ((plan.wWheel1 - plan.wWheel0) * t) / D
 
         if (t <= A) {
-          // Rim orbit, linear friction.
           this.ballAngle = plan.ball0 + w0 * t + ((wDrop - w0) * t * t) / (2 * A)
           ballR = OUTER_TRACK
         } else if (t <= A + B) {
-          // Spiral drop toward the pockets.
           const tb = t - A
           const sweepA = ((w0 + wDrop) / 2) * A
           this.ballAngle = plan.ball0 + sweepA + wDrop * tb + ((0 - wDrop) * tb * tb) / (2 * B)
           ballR = OUTER_TRACK - (OUTER_TRACK - BALL_REST) * smoothstep(0, 1, tb / B)
         } else {
-          // Captured: damped separator bounces, then ride the rotor.
           const tc = (t - A - B) / C
           const decay = Math.exp(-4.5 * tc)
           const wobble = Math.sin(tc * Math.PI * 4.4) * decay
@@ -218,50 +477,75 @@ export class Wheel3D {
     this.ballShadow.visible = visible
   }
 
+  /* ------------------------------ per-frame draw ------------------------------ */
+
   private draw(ballR: number, bounce: number) {
     const R = this.radius
     const g = this.pockets
-    const depth = R * 0.14
-
-    this.side.clear()
-    this.side.ellipse(0, depth, R * 1.12, R * 1.12 * COS_T).fill(0x3d2713)
-    this.side.ellipse(0, depth * 0.5, R * 1.12, R * 1.12 * COS_T).fill(0x4a2f18)
 
     g.clear()
-    g.ellipse(0, 0, R * 1.12, R * 1.12 * COS_T).fill(palette.wheelRim)
-    g.ellipse(0, 0, R * 1.02, R * 1.02 * COS_T).fill(0x241407)
-    g.ellipse(0, 0, R * OUTER_TRACK, R * OUTER_TRACK * COS_T).fill(0x160c04)
 
     for (let i = 0; i < WHEEL_NUMBERS.length; i++) {
       const a0 = this.rotation + i * STEP - STEP / 2
       const a1 = this.rotation + i * STEP + STEP / 2
-      const p1 = this.project(a0, R * POCKET_IN)
-      const p2 = this.project(a0, R * POCKET_OUT)
-      const p3 = this.project(a1, R * POCKET_OUT)
-      const p4 = this.project(a1, R * POCKET_IN)
-      g.poly([p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y])
-        .fill(pocketFill(colorOf(WHEEL_NUMBERS[i])))
-        .stroke({ width: 1, color: 0x000000, alpha: 0.4 })
+      const color = pocketFill(colorOf(WHEEL_NUMBERS[i]))
+
+      // Number band (upper plane).
+      const n1 = this.project(a0, R * NUM_IN)
+      const n2 = this.project(a0, R * NUM_OUT)
+      const n3 = this.project(a1, R * NUM_OUT)
+      const n4 = this.project(a1, R * NUM_IN)
+      g.poly([n1.x, n1.y, n2.x, n2.y, n3.x, n3.y, n4.x, n4.y]).fill(color)
+
+      // Step wall between the planes.
+      const w1 = this.project(a0, R * NUM_IN)
+      const w2 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
+      const w3 = this.project(a1, R * POCKET_OUT, -R * STEP_DROP)
+      const w4 = this.project(a1, R * NUM_IN)
+      g.poly([w1.x, w1.y, w2.x, w2.y, w3.x, w3.y, w4.x, w4.y]).fill(darken(color, 0.35))
+
+      // Pocket band (lower plane, darker).
+      const p1 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
+      const p2 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
+      const p3 = this.project(a1, R * POCKET_OUT, -R * STEP_DROP)
+      const p4 = this.project(a1, R * POCKET_IN, -R * STEP_DROP)
+      g.poly([p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y]).fill(darken(color, 0.62))
+
+      // Chrome fret between segments, spanning both planes.
+      const f1 = this.project(a0, R * NUM_OUT)
+      const f2 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
+      g.moveTo(f1.x, f1.y).lineTo(f2.x, f2.y).stroke({ width: 1.4, color: 0xc9ced6, alpha: 0.75 })
     }
 
+    // Winner highlight on both planes once the ball has landed.
     if (this.target !== null && this.mode === 'landed') {
       const i = WHEEL_NUMBERS.indexOf(this.target as (typeof WHEEL_NUMBERS)[number])
       const a0 = this.rotation + i * STEP - STEP / 2
       const a1 = this.rotation + i * STEP + STEP / 2
-      const p1 = this.project(a0, R * POCKET_IN)
-      const p2 = this.project(a0, R * POCKET_OUT)
-      const p3 = this.project(a1, R * POCKET_OUT)
-      const p4 = this.project(a1, R * POCKET_IN)
+      const n1 = this.project(a0, R * NUM_IN)
+      const n2 = this.project(a0, R * NUM_OUT)
+      const n3 = this.project(a1, R * NUM_OUT)
+      const n4 = this.project(a1, R * NUM_IN)
+      g.poly([n1.x, n1.y, n2.x, n2.y, n3.x, n3.y, n4.x, n4.y]).stroke({ width: 2.5, color: palette.gold })
+      const p1 = this.project(a0, R * POCKET_IN, -R * STEP_DROP)
+      const p2 = this.project(a0, R * POCKET_OUT, -R * STEP_DROP)
+      const p3 = this.project(a1, R * POCKET_OUT, -R * STEP_DROP)
+      const p4 = this.project(a1, R * POCKET_IN, -R * STEP_DROP)
       g.poly([p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y]).stroke({
-        width: 2.5,
+        width: 1.5,
         color: palette.gold,
+        alpha: 0.7,
       })
     }
 
-    g.ellipse(0, 0, R * POCKET_IN, R * POCKET_IN * COS_T).fill(0x2b1a0c)
-    g.ellipse(0, -R * 0.02 * SIN_T, R * 0.5, R * 0.5 * COS_T).fill(0x3a2410)
-    g.ellipse(0, -R * 0.07 * SIN_T, R * 0.12, R * 0.12 * COS_T).fill(palette.gold)
+    // Inner shadow where the rotor meets the cone.
+    g.ellipse(0, R * STEP_DROP * SIN_T * -1, R * POCKET_IN, R * POCKET_IN * COS_T).stroke({
+      width: R * 0.02,
+      color: 0x000000,
+      alpha: 0.4,
+    })
 
+    // Labels: painted on the number band with the full affine projection.
     for (let i = 0; i < this.labels.length; i++) {
       const label = this.labels[i]
       const mid = this.rotation + i * STEP
@@ -279,9 +563,18 @@ export class Wheel3D {
       label.setFromMatrix(LABEL_MATRIX)
     }
 
-    const ballPos = this.project(this.ballAngle, R * ballR, bounce * R)
-    const shadowPos = this.project(this.ballAngle, R * ballR)
-    this.ball.position.set(ballPos.x, ballPos.y - R * 0.02)
+    // Cone: flat drawing spun by the same projection.
+    const cs = (R * CONE_R) / 140
+    const ccos = Math.cos(this.rotation)
+    const csin = Math.sin(this.rotation)
+    CONE_MATRIX.set(ccos * cs, csin * cs * COS_T, -csin * cs, ccos * cs * COS_T, 0, -R * STEP_DROP * SIN_T)
+    this.cone.setFromMatrix(CONE_MATRIX)
+
+    // Ball.
+    const drop = ballR <= POCKET_OUT ? -STEP_DROP : 0
+    const ballPos = this.project(this.ballAngle, R * ballR, R * (bounce + drop))
+    const shadowPos = this.project(this.ballAngle, R * ballR, R * drop)
+    this.ball.position.set(ballPos.x, ballPos.y - R * 0.018)
     this.ballShadow.position.set(shadowPos.x, shadowPos.y)
     this.ballShadow.alpha = Math.max(0.15, 0.35 - bounce * 3)
   }
