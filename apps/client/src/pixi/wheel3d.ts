@@ -3,13 +3,14 @@ import { WHEEL_NUMBERS, colorOf } from '@rondo/protocol'
 import { palette, pocketFill } from './palette'
 
 const STEP = (Math.PI * 2) / WHEEL_NUMBERS.length
+const TAU = Math.PI * 2
 const TILT = (55 * Math.PI) / 180
 const COS_T = Math.cos(TILT)
 const SIN_T = Math.sin(TILT)
 
 const IDLE_SPEED = 0.0004
-const SPIN_SPEED = 0.0016
-const BALL_SPEED = -0.0042
+const SPIN_SPEED = 0.0014
+const BALL_LAUNCH = -0.0042
 
 const OUTER_TRACK = 0.98
 const POCKET_OUT = 0.92
@@ -21,8 +22,9 @@ type Mode = 'idle' | 'spinning' | 'landing' | 'landed'
 
 const LABEL_MATRIX = new Matrix()
 
-function easeOutCubic(t: number) {
-  return 1 - Math.pow(1 - t, 3)
+/** Shortest signed angular distance, always in [-π, π]. */
+function normalizeAngle(a: number) {
+  return a - TAU * Math.round(a / TAU)
 }
 
 function smoothstep(edge0: number, edge1: number, x: number) {
@@ -30,17 +32,30 @@ function smoothstep(edge0: number, edge1: number, x: number) {
   return t * t * (3 - 2 * t)
 }
 
-/** Shortest signed angular distance, always in [-π, π]. */
-function normalizeAngle(a: number) {
-  return a - Math.PI * 2 * Math.round(a / (Math.PI * 2))
+/**
+ * The landing is a boundary problem solved backwards: the target pocket is
+ * known when the flight starts, so we derive the launch velocity that makes
+ * plain kinematics — rim orbit, spiral drop, pocket capture with damped
+ * bounces — arrive exactly in that pocket. Linear ω profiles integrate to
+ * quadratics, so the required initial speed falls out of a linear equation;
+ * the free integer (extra revolutions) is chosen to keep it natural.
+ */
+interface FlightPlan {
+  t0: number
+  /** Phase durations: rim orbit / spiral drop / capture-bounce. */
+  A: number
+  B: number
+  C: number
+  ball0: number
+  w0: number
+  wDrop: number
+  /** Deterministic rotor profile during the flight. */
+  rot0: number
+  wWheel0: number
+  wWheel1: number
+  pocketAngle: number
 }
 
-/**
- * Pseudo-3D wheel: every pocket is a quad between two ellipses under a ~55°
- * camera tilt, redrawn each frame (no meshes, no assets, no three.js). The
- * rotor never fully stops — like a real table it keeps idling — and the ball
- * lands wherever the winning pocket happens to be, then rides the rotor.
- */
 export class Wheel3D {
   readonly view = new Container()
   private side = new Graphics()
@@ -50,12 +65,11 @@ export class Wheel3D {
   private ball = new Graphics()
 
   private mode: Mode = 'idle'
-  private rotation = Math.random() * Math.PI * 2
+  private rotation = Math.random() * TAU
   private speed = IDLE_SPEED
   private ballAngle = 0
-  private ballSpeed = BALL_SPEED
   private target: number | null = null
-  private landing: { startedAt: number; duration: number } | null = null
+  private plan: FlightPlan | null = null
 
   constructor(private radius: number) {
     this.view.addChild(this.side, this.pockets)
@@ -85,22 +99,57 @@ export class Wheel3D {
   startSpin() {
     this.mode = 'spinning'
     this.target = null
-    this.landing = null
+    this.plan = null
     this.ballAngle = this.rotation + Math.PI
-    this.ballSpeed = BALL_SPEED
     this.setBallVisible(true)
   }
 
   landOn(number: number, duration: number, now: number) {
+    const index = WHEEL_NUMBERS.indexOf(number as (typeof WHEEL_NUMBERS)[number])
+    const pocketAngle = index * STEP
+
+    const C = Math.min(900, duration * 0.22)
+    const B = Math.min(1300, duration * 0.3)
+    const A = duration - B - C
+
+    // Rotor: linear decel from its current speed for the whole flight.
+    const rot0 = this.rotation
+    const wWheel0 = this.speed
+    const wWheel1 = IDLE_SPEED * 1.5
+    const wheelAngleAt = (t: number) => rot0 + wWheel0 * t + ((wWheel1 - wWheel0) * t * t) / (2 * duration)
+
+    // Boundary: ball angle at capture (end of phase B) must equal the pocket's
+    // absolute angle at that moment, modulo full turns.
+    const tCapture = A + B
+    const targetAtCapture = wheelAngleAt(tCapture) + pocketAngle
+    const wDrop = BALL_LAUNCH * 0.32
+    const wEnd = 0
+
+    const ball0 = this.ballAngle
+    const sweepB = ((wDrop + wEnd) / 2) * B
+    // sweep needed in phase A, then w0 from the linear relation sweepA = (w0+wDrop)/2 · A.
+    const base = normalizeAngle(targetAtCapture - ball0) - sweepB
+    let bestW0 = BALL_LAUNCH
+    let bestDiff = Infinity
+    for (let m = 0; m < 14; m++) {
+      const sweepA = base - TAU * m
+      const w0 = (2 * sweepA) / A - wDrop
+      const diff = Math.abs(w0 - BALL_LAUNCH)
+      if (w0 < 0 && diff < bestDiff) {
+        bestDiff = diff
+        bestW0 = w0
+      }
+    }
+
     this.mode = 'landing'
     this.target = number
-    this.landing = { startedAt: now, duration }
+    this.plan = { t0: now, A, B, C, ball0, w0: bestW0, wDrop, rot0, wWheel0, wWheel1, pocketAngle }
   }
 
   reset() {
     this.mode = 'idle'
     this.target = null
-    this.landing = null
+    this.plan = null
     this.setBallVisible(false)
   }
 
@@ -111,38 +160,54 @@ export class Wheel3D {
     switch (this.mode) {
       case 'idle':
         this.speed += (IDLE_SPEED - this.speed) * 0.05
+        this.rotation += this.speed * dtMs
         break
       case 'spinning':
         this.speed += (SPIN_SPEED - this.speed) * 0.04
-        this.ballAngle += this.ballSpeed * dtMs
+        this.rotation += this.speed * dtMs
+        this.ballAngle += BALL_LAUNCH * dtMs
         break
       case 'landing': {
-        const { startedAt, duration } = this.landing!
-        const a = Math.min(1, (now - startedAt) / duration)
-        this.speed += (IDLE_SPEED * 1.6 - this.speed) * 0.03
-        this.ballSpeed = BALL_SPEED * (1 - easeOutCubic(a) * 0.85)
-        this.ballAngle += this.ballSpeed * dtMs
-        ballR = OUTER_TRACK - (OUTER_TRACK - BALL_REST) * smoothstep(0.3, 0.85, a)
-        // Converge onto the pocket wherever it currently is.
-        const pocketIndex = WHEEL_NUMBERS.indexOf(this.target! as (typeof WHEEL_NUMBERS)[number])
-        const targetAngle = this.rotation + pocketIndex * STEP
-        const blend = smoothstep(0.55, 0.97, a)
-        this.ballAngle += normalizeAngle(targetAngle - this.ballAngle) * blend
-        bounce = Math.abs(Math.sin(a * Math.PI * 5)) * (1 - a) * smoothstep(0.6, 0.8, a) * 0.05
-        if (a >= 1) this.mode = 'landed'
+        const plan = this.plan!
+        const { A, B, C, w0, wDrop, pocketAngle } = plan
+        const D = A + B + C
+        const t = Math.min(D, now - plan.t0)
+
+        // Deterministic rotor.
+        this.rotation = plan.rot0 + plan.wWheel0 * t + ((plan.wWheel1 - plan.wWheel0) * t * t) / (2 * D)
+        this.speed = plan.wWheel0 + ((plan.wWheel1 - plan.wWheel0) * t) / D
+
+        if (t <= A) {
+          // Rim orbit, linear friction.
+          this.ballAngle = plan.ball0 + w0 * t + ((wDrop - w0) * t * t) / (2 * A)
+          ballR = OUTER_TRACK
+        } else if (t <= A + B) {
+          // Spiral drop toward the pockets.
+          const tb = t - A
+          const sweepA = ((w0 + wDrop) / 2) * A
+          this.ballAngle = plan.ball0 + sweepA + wDrop * tb + ((0 - wDrop) * tb * tb) / (2 * B)
+          ballR = OUTER_TRACK - (OUTER_TRACK - BALL_REST) * smoothstep(0, 1, tb / B)
+        } else {
+          // Captured: damped separator bounces, then ride the rotor.
+          const tc = (t - A - B) / C
+          const decay = Math.exp(-4.5 * tc)
+          const wobble = Math.sin(tc * Math.PI * 4.4) * decay
+          this.ballAngle = this.rotation + pocketAngle + wobble * STEP * 0.45
+          ballR = BALL_REST + Math.abs(wobble) * 0.03
+          bounce = Math.abs(Math.sin(tc * Math.PI * 4.4)) * decay * 0.045
+        }
+        if (t >= D) this.mode = 'landed'
         break
       }
       case 'landed':
         this.speed += (IDLE_SPEED - this.speed) * 0.02
+        this.rotation += this.speed * dtMs
+        if (this.target !== null) {
+          const index = WHEEL_NUMBERS.indexOf(this.target as (typeof WHEEL_NUMBERS)[number])
+          this.ballAngle = this.rotation + index * STEP
+        }
         ballR = BALL_REST
         break
-    }
-
-    this.rotation += this.speed * dtMs
-
-    if (this.mode === 'landed' && this.target !== null) {
-      const pocketIndex = WHEEL_NUMBERS.indexOf(this.target as (typeof WHEEL_NUMBERS)[number])
-      this.ballAngle = this.rotation + pocketIndex * STEP
     }
 
     this.draw(ballR, bounce)
@@ -159,7 +224,6 @@ export class Wheel3D {
     const depth = R * 0.14
 
     this.side.clear()
-    // Rim depth: the same ellipses pushed down paint the wooden side wall.
     this.side.ellipse(0, depth, R * 1.12, R * 1.12 * COS_T).fill(0x3d2713)
     this.side.ellipse(0, depth * 0.5, R * 1.12, R * 1.12 * COS_T).fill(0x4a2f18)
 
@@ -194,7 +258,6 @@ export class Wheel3D {
       })
     }
 
-    // Cone and hub.
     g.ellipse(0, 0, R * POCKET_IN, R * POCKET_IN * COS_T).fill(0x2b1a0c)
     g.ellipse(0, -R * 0.02 * SIN_T, R * 0.5, R * 0.5 * COS_T).fill(0x3a2410)
     g.ellipse(0, -R * 0.07 * SIN_T, R * 0.12, R * 0.12 * COS_T).fill(palette.gold)
@@ -202,9 +265,6 @@ export class Wheel3D {
     for (let i = 0; i < this.labels.length; i++) {
       const label = this.labels[i]
       const mid = this.rotation + i * STEP
-      // Labels are painted ON the disc: rotate radially in disc space, then
-      // apply the exact same tilt projection as the pockets. A plain screen
-      // rotation can't reproduce the foreshortening — a full affine can.
       const rot = mid + Math.PI / 2
       const cos = Math.cos(rot)
       const sin = Math.sin(rot)
