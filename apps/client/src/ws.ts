@@ -6,9 +6,11 @@ const WS_URL = SERVER_URL.replace(/^http/, 'ws') + '/ws'
 
 let socket: WebSocket | null = null
 let retryMs = 1000
+let intentionalClose = false
 
 /** One socket per tab; reconnects with backoff and re-syncs via table_snapshot. */
 export function connect(token: string) {
+  intentionalClose = false
   useGame.getState().setConnection('connecting')
   socket = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`)
 
@@ -28,10 +30,17 @@ export function connect(token: string) {
   }
   socket.onclose = (event) => {
     useGame.getState().setConnection('closed')
-    if (event.code === 4003) return // stale token — Join screen takes over
+    if (intentionalClose || event.code === 4003) return
     setTimeout(() => connect(token), retryMs)
     retryMs = Math.min(retryMs * 2, 10_000)
   }
+}
+
+/** Leave the table: close without triggering the reconnect loop. */
+export function disconnect() {
+  intentionalClose = true
+  socket?.close()
+  socket = null
 }
 
 export function sendCommand(command: ClientCommand) {

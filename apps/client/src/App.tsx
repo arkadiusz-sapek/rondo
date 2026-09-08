@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { JoinResponse } from './api'
 import { GameStage } from './pixi/GameStage'
-import { ChipBar, ResultBanner, ResultsStrip, Toast, TopBar } from './ui/Hud'
+import { Dock } from './ui/Dock'
+import { Drawer, RightRail, type DrawerKind } from './ui/Drawers'
+import { ResultBanner, ResultsStrip, Toast, TopBar } from './ui/Hud'
 import { Join } from './ui/Join'
-import { SidePanel } from './ui/SidePanel'
-import { connect } from './ws'
+import { connect, disconnect } from './ws'
 
 const SESSION_KEY = 'rondo-session'
 
@@ -24,6 +25,7 @@ function loadSession(): Session | null {
 
 export function App() {
   const [session, setSession] = useState<Session | null>(loadSession)
+  const [drawer, setDrawer] = useState<DrawerKind | null>(null)
 
   useEffect(() => {
     if (session) connect(session.token)
@@ -41,19 +43,27 @@ export function App() {
     )
   }
 
+  const leave = () => {
+    disconnect()
+    localStorage.removeItem(SESSION_KEY)
+    setDrawer(null)
+    setSession(null)
+  }
+
   return (
     <div className="table-layout">
+      <GameStage />
       <TopBar />
-      <div className="table-main">
-        <div className="stage-wrap">
-          <GameStage />
-          <ResultsStrip />
-          <ResultBanner />
-          <Toast />
-        </div>
-        <SidePanel token={session.token} />
-      </div>
-      <ChipBar />
+      <ResultsStrip />
+      <ResultBanner />
+      <Toast />
+      <Dock />
+      <RightRail
+        open={drawer}
+        onToggle={(kind) => setDrawer((current) => (current === kind ? null : kind))}
+        onLeave={leave}
+      />
+      {drawer && <Drawer kind={drawer} token={session.token} onClose={() => setDrawer(null)} />}
     </div>
   )
 }

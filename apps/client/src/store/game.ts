@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Bet, Phase, PlayerPublic, RecentResult, ServerEvent } from '@rondo/protocol'
+import type { Bet, ChatMessage, Phase, PlayerPublic, RecentResult, ServerEvent } from '@rondo/protocol'
 
 export interface LastResult {
   number: number
@@ -24,9 +24,12 @@ interface GameState {
   lastResult: LastResult | null
   toast: string | null
   selectedChip: number
+  chat: ChatMessage[]
+  chatUnread: number
   setConnection: (connection: GameState['connection']) => void
   setSelectedChip: (chip: number) => void
   dismissToast: () => void
+  markChatRead: () => void
   apply: (event: ServerEvent) => void
 }
 
@@ -50,9 +53,12 @@ export const useGame = create<GameState>((set) => ({
   lastResult: null,
   toast: null,
   selectedChip: 5,
+  chat: [],
+  chatUnread: 0,
   setConnection: (connection) => set({ connection }),
   setSelectedChip: (selectedChip) => set({ selectedChip }),
   dismissToast: () => set({ toast: null }),
+  markChatRead: () => set({ chatUnread: 0 }),
   apply: (event) => {
     switch (event.type) {
       case 'table_snapshot': {
@@ -69,9 +75,16 @@ export const useGame = create<GameState>((set) => ({
           players: p.players,
           recentResults: p.recentResults,
           spinTarget: p.phase === 'spinning' || p.phase === 'result' ? p.lastNumber : null,
+          chat: p.chatHistory,
         })
         return
       }
+      case 'chat_message':
+        set((state) => ({
+          chat: [...state.chat, event.payload].slice(-100),
+          chatUnread: state.chatUnread + 1,
+        }))
+        return
       case 'phase_changed': {
         const { phase, roundId, bettingEndsAt } = event.payload
         set((state) => ({

@@ -30,13 +30,20 @@ apps/server         NestJS + plain `ws` + Drizzle/Postgres
 apps/client         Vite + React 19 + PixiJS v8 + Zustand + TanStack Query
   store/game.ts     ONE reducer for the wire: every ServerEvent lands in a
                     single switch; components read plain state
-  pixi/wheel.ts     procedurally drawn 37-pocket wheel; ball eased into the
-                    winning pocket once spin_result names it
+  pixi/wheel3d.ts   pseudo-3D wheel: every pocket is a quad between two
+                    ellipses under a ~55° camera tilt, redrawn per frame —
+                    no meshes, no assets, no three.js. The rotor never
+                    fully stops (idles like a real table) and the ball
+                    lands wherever the winning pocket happens to be, then
+                    rides the rotor
   pixi/board.ts     betting grid with EVENT DELEGATION: ~50 clickable spots,
-                    exactly one pointer listener — taps are resolved to a
-                    spot by rect lookup, no per-spot handlers
-  ui/*              DOM overlays stacked on the canvas: HUD, chip bar,
-                    results strip, players/history side panel
+                    exactly one pointer listener — taps AND chip drag-drops
+                    are resolved to a spot by rect lookup, no per-spot
+                    handlers
+  pixi/confetti.ts  particle burst on wins, ticked from the main loop
+  ui/*              glass DOM overlays stacked on the fullscreen canvas:
+                    HUD, chip dock (click or drag & drop), right rail with
+                    chat / players / history drawers, leave-table
 ```
 
 ### The protocol
@@ -52,7 +59,9 @@ Every frame in both directions is `{ type, payload }`:
 | → client | `player_joined` / `player_left` | presence |
 | → client | `spin_result` | the number, revealed mid-spin so clients can ease the ball in |
 | → client | `round_settled` | personalized: your return + new balance |
+| → client | `chat_message` | table chat (ring buffer replayed in the snapshot) |
 | → server | `place_bet` / `undo_bet` / `clear_bets` | guarded by phase + balance |
+| → server | `chat_send` | rate-limited table chat |
 
 Both ends parse incoming frames with zod (`parseServerEvent` /
 `parseClientCommand`) — malformed input dies at the edge, never inside game
@@ -91,7 +100,11 @@ three packages.
   delegation hit-test were designed for splits/corners/streets — that's the
   next milestone.
 - Guests + bearer token, no accounts. The token in localStorage survives
-  refreshes and reconnects (server replays a full `table_snapshot`).
+  refreshes and reconnects (server replays a full `table_snapshot`);
+  "leave table" drops the session — a new nickname is a fresh $100 guest.
+- The layout is phase-driven: while betting the grid is the hero, during the
+  spin the wheel scales up and takes the stage. One fullscreen Pixi scene,
+  DOM glass panels on top.
 - RNG is `crypto.randomInt` server-side. A provably-fair scheme
   (hash-committed seeds) is on the roadmap.
 
