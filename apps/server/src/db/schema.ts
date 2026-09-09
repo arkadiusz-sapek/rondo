@@ -16,7 +16,7 @@ export const users = pgTable('users', {
 export const tables = pgTable('tables', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
-  game: text('game', { enum: ['roulette', 'blackjack'] }).notNull(),
+  game: text('game', { enum: ['roulette', 'blackjack', 'skat'] }).notNull(),
   minStake: integer('min_stake').notNull(),
   maxStake: integer('max_stake').notNull(),
   isOpen: boolean('is_open').notNull().default(true),

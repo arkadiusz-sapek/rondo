@@ -10,6 +10,7 @@ import { BjTable } from './ui/BjTable'
 import { Drawer, RightRail, type DrawerKind } from './ui/Drawers'
 import { Lobby } from './ui/Lobby'
 import { RouletteTable } from './ui/RouletteTable'
+import { SkatTable } from './ui/SkatTable'
 import { connect, disconnect } from './ws'
 
 export function App() {
@@ -78,7 +79,7 @@ function TableRoute({ user, tableId }: { user: SessionUser; tableId: string }) {
 
   return (
     <>
-      {table.game === 'roulette' ? <RouletteTable /> : <BjTable />}
+      {table.game === 'roulette' ? <RouletteTable /> : table.game === 'blackjack' ? <BjTable /> : <SkatTable />}
       <RightRail
         open={drawer}
         onToggle={(kind) => setDrawer((current) => (current === kind ? null : kind))}

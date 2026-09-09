@@ -3,12 +3,13 @@ import { useState } from 'react'
 import { api, type SessionUser, type TableInfo } from '../api'
 import { navigate } from '../router'
 
-type Category = 'all' | 'roulette' | 'blackjack'
+type Category = 'all' | 'roulette' | 'blackjack' | 'skat'
 
 const CATEGORIES: { id: Category; label: string; icon: string }[] = [
   { id: 'all', label: 'All games', icon: '✦' },
   { id: 'roulette', label: 'Roulette', icon: '◎' },
   { id: 'blackjack', label: 'Blackjack', icon: '♠' },
+  { id: 'skat', label: 'Skat', icon: '♣' },
 ]
 
 export function Lobby({
@@ -103,10 +104,16 @@ function TableTile({ table, onJoin }: { table: TableInfo; onJoin: () => void }) 
       <div className="tile-art">
         {table.game === 'roulette' ? (
           <span className="art-wheel" />
-        ) : (
+        ) : table.game === 'blackjack' ? (
           <span className="art-cards">
             <i>A♠</i>
             <i>K♥</i>
+          </span>
+        ) : (
+          <span className="art-cards art-skat">
+            <i>♣J</i>
+            <i className="red">♥A</i>
+            <i>♠J</i>
           </span>
         )}
       </div>
@@ -115,7 +122,7 @@ function TableTile({ table, onJoin }: { table: TableInfo; onJoin: () => void }) 
         <span className="tile-game">{table.game}</span>
         <div className="tile-meta">
           <span className="tile-stakes">
-            ${table.minStake}–${table.maxStake}
+            {table.game === 'skat' ? 'Seeger list · 36 games' : `$${table.minStake}–$${table.maxStake}`}
           </span>
           <span className="tile-players">● {table.playersOnline} online</span>
         </div>

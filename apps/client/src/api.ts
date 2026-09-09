@@ -11,7 +11,7 @@ export interface SessionUser {
 export interface TableInfo {
   id: string
   name: string
-  game: 'roulette' | 'blackjack'
+  game: 'roulette' | 'blackjack' | 'skat'
   minStake: number
   maxStake: number
   isOpen: boolean

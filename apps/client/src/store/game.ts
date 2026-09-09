@@ -9,6 +9,7 @@ import type {
   PlayerPublic,
   RecentResult,
   ServerEvent,
+  SkatState,
   TableMeta,
 } from '@rondo/protocol'
 
@@ -47,6 +48,7 @@ interface GameState {
     myBet: number
     lastReturned: number | null
   }
+  skat: SkatState | null
   setConnection: (connection: GameState['connection']) => void
   setSelectedChip: (chip: number) => void
   dismissToast: () => void
@@ -86,6 +88,7 @@ export const useGame = create<GameState>((set) => ({
     myBet: 0,
     lastReturned: null,
   },
+  skat: null,
   setConnection: (connection) => set({ connection }),
   setSelectedChip: (selectedChip) => set({ selectedChip }),
   dismissToast: () => set({ toast: null }),
@@ -250,6 +253,18 @@ export const useGame = create<GameState>((set) => ({
       case 'error':
         set({ toast: event.payload.message })
         return
+      case 'skat_state': {
+        const { you, players, chatHistory, table, ...skat } = event.payload
+        set((state) => ({
+          skat,
+          ...(you ? { playerId: you.id, nickname: you.nickname, balance: you.balance } : {}),
+          ...(players ? { players } : {}),
+          ...(chatHistory ? { chat: chatHistory } : {}),
+          ...(table ? { table } : {}),
+          connection: state.connection,
+        }))
+        return
+      }
     }
   },
 }))

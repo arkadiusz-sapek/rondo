@@ -7,7 +7,7 @@ export interface Transport {
 }
 
 export interface GameEngine {
-  readonly game: 'roulette' | 'blackjack'
+  readonly game: 'roulette' | 'blackjack' | 'skat'
   start(): Promise<void> | void
   stop(): void
   dropPlayer(playerId: string): Promise<void> | void

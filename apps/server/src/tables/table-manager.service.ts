@@ -5,10 +5,10 @@ import type { Db } from '../db/index'
 import { tables, type TableRow } from '../db/schema'
 import { BlackjackEngine } from '../engine/blackjackEngine'
 import { RouletteEngine } from '../engine/rouletteEngine'
-import type { GameEngine } from '../engine/transport'
+import { SkatEngine } from '../engine/skatEngine'
 import { WsService } from '../ws/ws.service'
 
-type Engine = RouletteEngine | BlackjackEngine
+type Engine = RouletteEngine | BlackjackEngine | SkatEngine
 
 /** Boots one live engine per open room and keeps them in sync with admin edits. */
 @Injectable()
@@ -33,6 +33,14 @@ export class TableManager implements OnModuleInit, OnModuleDestroy {
         ])
         .returning()
     }
+    // The skat room is part of the fixed lineup — seed it once, never wipe anything.
+    if (!rows.some((row) => row.game === 'skat')) {
+      const [skatRow] = await this.db
+        .insert(tables)
+        .values([{ name: 'Skat Stammtisch', game: 'skat', minStake: 1, maxStake: 1 }])
+        .returning()
+      rows.push(skatRow)
+    }
     for (const row of rows) {
       if (row.isOpen) this.boot(row)
     }
@@ -47,7 +55,9 @@ export class TableManager implements OnModuleInit, OnModuleDestroy {
     const engine: Engine =
       row.game === 'roulette'
         ? new RouletteEngine(this.db, row, transport)
-        : new BlackjackEngine(this.db, row, transport)
+        : row.game === 'blackjack'
+          ? new BlackjackEngine(this.db, row, transport)
+          : new SkatEngine(this.db, row, transport)
     this.engines.set(row.id, engine)
     void engine.start()
   }
@@ -64,7 +74,7 @@ export class TableManager implements OnModuleInit, OnModuleDestroy {
     }))
   }
 
-  async create(input: { name: string; game: 'roulette' | 'blackjack'; minStake: number; maxStake: number }) {
+  async create(input: { name: string; game: 'roulette' | 'blackjack' | 'skat'; minStake: number; maxStake: number }) {
     const [row] = await this.db.insert(tables).values(input).returning()
     this.boot(row)
     return row

@@ -124,6 +124,7 @@ function CreateTable({ token, onCreated }: { token: string; onCreated: () => voi
       <select value={game} onChange={(event) => setGame(event.target.value as TableInfo['game'])}>
         <option value="roulette">roulette</option>
         <option value="blackjack">blackjack</option>
+        <option value="skat">skat</option>
       </select>
       <input type="number" min={1} value={minStake} onChange={(event) => setMinStake(event.target.value)} placeholder="min" />
       <input type="number" min={1} value={maxStake} onChange={(event) => setMaxStake(event.target.value)} placeholder="max" />

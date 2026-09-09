@@ -6,7 +6,7 @@ import { TableManager } from './table-manager.service'
 const createSchema = z
   .object({
     name: z.string().trim().min(2).max(40),
-    game: z.enum(['roulette', 'blackjack']),
+    game: z.enum(['roulette', 'blackjack', 'skat']),
     minStake: z.number().int().min(1),
     maxStake: z.number().int().min(1),
   })

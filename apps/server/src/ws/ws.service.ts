@@ -8,9 +8,10 @@ import type { Db } from '../db/index'
 import { users } from '../db/schema'
 import type { BlackjackEngine } from '../engine/blackjackEngine'
 import type { RouletteEngine } from '../engine/rouletteEngine'
+import type { SkatEngine } from '../engine/skatEngine'
 import type { Transport } from '../engine/transport'
 
-type Engine = RouletteEngine | BlackjackEngine
+type Engine = RouletteEngine | BlackjackEngine | SkatEngine
 
 interface Session {
   socket: WebSocket
@@ -89,8 +90,12 @@ export class WsService {
     }
     if (engine.game === 'roulette') {
       send(socket, { type: 'table_snapshot', payload: { ...engine.snapshotFor(you), ...shared } })
-    } else {
+    } else if (engine.game === 'blackjack') {
       send(socket, { type: 'bj_snapshot', payload: { ...engine.snapshot(), ...shared } })
+    } else {
+      // Seat (or re-seat) the player first — the snapshot must show their chair.
+      engine.playerSeen(user.id, user.nickname)
+      send(socket, { type: 'skat_state', payload: { ...engine.snapshotFor(user.id), ...shared } })
     }
     if (isFirstSocketOfPlayer) {
       this.broadcastTable(
@@ -145,6 +150,24 @@ export class WsService {
       case 'bj_double':
         if (engine.game !== 'blackjack') break
         return engine.double(session.playerId)
+      case 'skat_bid':
+        if (engine.game !== 'skat') break
+        return engine.handleBid(session.playerId, command.payload.action)
+      case 'skat_skat':
+        if (engine.game !== 'skat') break
+        return engine.handleSkat(session.playerId, command.payload.take)
+      case 'skat_discard':
+        if (engine.game !== 'skat') break
+        return engine.handleDiscard(session.playerId, command.payload.cards)
+      case 'skat_declare':
+        if (engine.game !== 'skat') break
+        return engine.handleDeclare(session.playerId, command.payload)
+      case 'skat_play':
+        if (engine.game !== 'skat') break
+        return engine.handlePlay(session.playerId, command.payload.card)
+      case 'skat_next':
+        if (engine.game !== 'skat') break
+        return engine.handleNext(session.playerId)
     }
     send(session.socket, { type: 'error', payload: { message: 'wrong game for that command' } })
   }

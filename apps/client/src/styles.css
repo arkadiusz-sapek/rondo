@@ -1260,3 +1260,497 @@ body {
   background: rgba(231, 200, 106, 0.2);
   color: #e7c86a;
 }
+
+/* ----------------------------------- skat ----------------------------------- */
+
+.skat-hand {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  z-index: 12;
+  padding: 0 20px;
+}
+
+.skat-card {
+  position: relative;
+  width: 84px;
+  height: 118px;
+  margin: 0 -17px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(20, 24, 30, 0.65);
+  background: linear-gradient(180deg, #fbf9f2, #efece1);
+  color: #1c1f26;
+  cursor: default;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transform-origin: 50% 120%;
+}
+
+.skat-card.red {
+  color: #c22f2f;
+}
+
+.skat-card .corner {
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.skat-card .pip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+}
+
+.skat-card.active {
+  cursor: pointer;
+}
+
+.skat-card.active:hover {
+  transform: translateY(-22px) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55), 0 0 0 2px rgba(231, 200, 106, 0.8);
+  z-index: 5;
+}
+
+.skat-card.dimmed {
+  filter: brightness(0.55) saturate(0.6);
+}
+
+.skat-card.picked {
+  transform: translateY(-26px) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55), 0 0 0 3px #e7c86a;
+  z-index: 5;
+}
+
+.skat-panel {
+  position: absolute;
+  bottom: 176px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 16px;
+  background: rgba(8, 14, 11, 0.82);
+  border: 1px solid rgba(231, 200, 106, 0.35);
+  backdrop-filter: blur(12px);
+  animation: pop 0.2s ease-out;
+  font-size: 14px;
+}
+
+.skat-panel.low {
+  bottom: 156px;
+}
+
+.skat-panel.info {
+  background: rgba(8, 14, 11, 0.55);
+  border-color: rgba(231, 200, 106, 0.15);
+  color: #b9c4ba;
+}
+
+.skat-panel button {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(231, 200, 106, 0.4);
+  background: rgba(231, 200, 106, 0.08);
+  color: #eef1ec;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.skat-panel button.primary {
+  background: linear-gradient(180deg, #2c9260, #1a6b42);
+  border: none;
+}
+
+.skat-panel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.skat-panel button:not(:disabled):hover {
+  filter: brightness(1.15);
+}
+
+.skat-panel.declare {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 520px;
+}
+
+.declare-games {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.declare-games button {
+  font-size: 17px;
+}
+
+.declare-games button.red {
+  color: #ff9c8f;
+}
+
+.declare-games small {
+  font-size: 11px;
+  opacity: 0.7;
+  font-weight: 600;
+}
+
+.declare-flags {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  font-size: 13px;
+  color: #b9c4ba;
+}
+
+.declare-flags label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.skat-reveal {
+  text-align: center;
+  color: #b9c4ba;
+  font-size: 13px;
+}
+
+.mini-card {
+  display: inline-block;
+  background: #fbf9f2;
+  color: #1c1f26;
+  border-radius: 5px;
+  padding: 2px 6px;
+  margin: 0 3px;
+  font-weight: 800;
+  font-size: 13px;
+  border: 1px solid rgba(20, 24, 30, 0.5);
+}
+
+.mini-card.red {
+  color: #c22f2f;
+}
+
+.skat-plate {
+  position: absolute;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: rgba(8, 14, 11, 0.7);
+  border: 1px solid rgba(231, 200, 106, 0.2);
+  backdrop-filter: blur(8px);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.skat-plate.turn {
+  border-color: rgba(231, 200, 106, 0.85);
+  box-shadow: 0 0 24px rgba(231, 200, 106, 0.35);
+}
+
+.skat-plate.rel-0 {
+  bottom: 44px;
+  left: calc(50% - 420px);
+}
+
+.skat-plate.rel-1 {
+  top: 13%;
+  left: 24px;
+}
+
+.skat-plate.rel-2 {
+  top: 13%;
+  right: 24px;
+}
+
+.plate-name {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.plate-tags {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: #b9c4ba;
+}
+
+.plate-tags i {
+  font-style: normal;
+  border: 1px solid rgba(231, 200, 106, 0.4);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: #e7c86a;
+}
+
+.plate-tags b {
+  color: #e7c86a;
+}
+
+.plate-tags em {
+  font-style: normal;
+}
+
+.bid-bubble {
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #e7c86a;
+  color: #14100a;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  animation: pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.skat-contract-tag {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #b9c4ba;
+  background: rgba(8, 14, 11, 0.6);
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(231, 200, 106, 0.18);
+}
+
+.skat-ouvert {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: rgba(8, 14, 11, 0.7);
+  padding: 6px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(231, 200, 106, 0.3);
+  font-size: 13px;
+  color: #b9c4ba;
+}
+
+.skat-result {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 14;
+  min-width: 360px;
+  text-align: center;
+  padding: 22px 32px;
+  border-radius: 20px;
+  background: rgba(5, 9, 7, 0.88);
+  border: 1px solid rgba(231, 200, 106, 0.45);
+  backdrop-filter: blur(12px);
+  animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.skat-result.won {
+  box-shadow: 0 0 70px rgba(231, 200, 106, 0.3);
+}
+
+.skat-result.lost {
+  border-color: rgba(198, 84, 66, 0.55);
+}
+
+.skat-result h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.skat-result p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #cfd8cf;
+}
+
+.skat-result .points {
+  font-size: 18px;
+  font-weight: 800;
+  color: #eef1ec;
+}
+
+.skat-result .delta {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.skat-result .delta.plus {
+  color: #5fd394;
+}
+
+.skat-result .delta.minus {
+  color: #ff8b8b;
+}
+
+.skat-result .muted {
+  color: #8b978d;
+  font-size: 12px;
+}
+
+.skat-result button.primary {
+  margin-top: 12px;
+  padding: 11px 24px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(180deg, #2c9260, #1a6b42);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.skat-list-toggle {
+  position: absolute;
+  top: 64px;
+  right: 18px;
+  z-index: 13;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(8, 14, 11, 0.75);
+  border: 1px solid rgba(231, 200, 106, 0.35);
+  color: #e7c86a;
+  font-weight: 800;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.skat-list {
+  position: absolute;
+  top: 56px;
+  right: 12px;
+  bottom: 12px;
+  width: 420px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: #f4efdf;
+  color: #24211a;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: pop 0.2s ease-out;
+}
+
+.skat-list header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 2px solid #24211a;
+}
+
+.skat-list h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.skat-list header button {
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #24211a;
+}
+
+.list-scroll {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.skat-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.skat-list th,
+.skat-list td {
+  border: 1px solid rgba(36, 33, 26, 0.35);
+  padding: 2.5px 7px;
+  text-align: center;
+  height: 21px;
+}
+
+.skat-list thead th {
+  background: #e7dfc6;
+  border-bottom: 2px solid #24211a;
+  font-size: 13px;
+  position: sticky;
+  top: 0;
+}
+
+.skat-list .num {
+  width: 34px;
+  color: #6b6454;
+  background: #efe8d2;
+}
+
+.skat-list .game-col {
+  width: 96px;
+  font-size: 11px;
+  color: #6b6454;
+}
+
+.skat-list td.won {
+  color: #1a6b42;
+  font-weight: 800;
+}
+
+.skat-list td.lost {
+  color: #9c3325;
+  font-weight: 800;
+}
+
+.skat-list tr.empty td {
+  color: transparent;
+}
+
+.skat-list tfoot td {
+  background: #e7dfc6;
+  font-weight: 700;
+  border-top: 2px solid #24211a;
+}
+
+.skat-list tfoot .final td,
+.skat-list tr.final td {
+  font-size: 14px;
+  font-weight: 900;
+  background: #ddd2ac;
+}
+
+.art-skat i {
+  font-size: 15px;
+}
+
+.art-skat .red {
+  color: #ff8b8b;
+}

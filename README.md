@@ -122,6 +122,15 @@ three packages.
 - **Blackjack**: 6-deck shoe, shared dealer, up to five seats per round,
   hit/stand/double with a 12s decision clock, S17, blackjack pays 3:2 —
   rules unit-tested in the shared protocol package.
+- **Skat**: the full three-hander per the International Skat Order — the
+  auction (18, 20, 22…), suit/grand/null with hand, ouvert and schneider/
+  schwarz announcements, matadors counted through the skat, the overbid rule,
+  and a 36-game Seeger-Fabian tournament list rendered like a real DSkV
+  score sheet. Two bots fill the empty chairs (fair AI: they see only their
+  own cards plus what's been played), so the table is playable solo; a
+  disconnected human's seat switches to autopilot until they return. Rules
+  live in `packages/protocol/src/skat.ts` with the same unit-test treatment,
+  and the client animates every card from the seat that threw it.
 
 ## Roadmap
 
