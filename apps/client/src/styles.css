@@ -1754,3 +1754,158 @@ body {
 .art-skat .red {
   color: #ff8b8b;
 }
+
+/* ------------------------- skat: DSkV Wettspielliste ------------------------ */
+
+.skat-list {
+  width: min(760px, calc(100vw - 40px));
+}
+
+.skat-list h3 small {
+  font-weight: 600;
+  color: #6b6454;
+  margin-left: 8px;
+}
+
+.skat-list th.v {
+  padding: 0;
+  vertical-align: bottom;
+  height: 74px;
+  width: 22px;
+}
+
+.skat-list th.v span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 4px 0;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.skat-list .names-row th {
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.skat-list .player-head {
+  font-size: 13px !important;
+  min-width: 86px;
+}
+
+.skat-list .subhead th {
+  font-size: 10.5px;
+}
+
+.skat-list .startnr {
+  font-size: 10px !important;
+  color: #6b6454;
+  font-weight: 600;
+}
+
+.skat-list td {
+  font-size: 12px;
+  padding: 2px 3px;
+  height: 20px;
+}
+
+.skat-list td.pcol {
+  min-width: 46px;
+  font-weight: 700;
+}
+
+.skat-list td.gv {
+  width: 15px;
+  padding: 2px 1px;
+  font-size: 10px;
+  color: #24211a;
+}
+
+.skat-list td.pcol.dealer {
+  background: #e0d8bf;
+}
+
+.skat-list td.won {
+  color: #1a6b42;
+  font-weight: 800;
+}
+
+.skat-list td.lost {
+  color: #9c3325;
+  font-weight: 800;
+}
+
+.skat-list .foot-label {
+  text-align: left !important;
+  font-size: 11px;
+  font-weight: 700;
+  padding-left: 8px;
+}
+
+.skat-standings {
+  position: absolute;
+  bottom: 18px;
+  right: 18px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(8, 14, 11, 0.68);
+  border: 1px solid rgba(231, 200, 106, 0.22);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  min-width: 132px;
+}
+
+.skat-standings > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.skat-standings .pos {
+  color: #8b978d;
+  width: 12px;
+}
+
+.skat-standings .nick {
+  flex: 1;
+  color: #cfd8cf;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+}
+
+.skat-standings .pts {
+  font-weight: 800;
+  color: #e7c86a;
+  font-variant-numeric: tabular-nums;
+}
+
+.skat-standings .me .nick {
+  color: #fff;
+  font-weight: 700;
+}
+
+.skat-list tfoot {
+  position: sticky;
+  bottom: 0;
+}
+
+.skat-list tfoot td {
+  box-shadow: 0 -1px 0 #24211a;
+}
+
+.skat-list thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.skat-list thead th {
+  position: static;
+}

@@ -132,25 +132,52 @@ export const skatBiddingSchema = z.object({
     .nullable(),
 })
 
+/**
+ * One row of the DSkV Wettspielliste. The player column carries the PURE
+ * cumulative game score (won: +value, lost: −2·value); every Seeger premium
+ * lives in the footer, exactly like the printed sheet:
+ * A) sum of points · B) (won−lost)×50 · C) opponents' lost games ×40.
+ */
 export const skatListRowSchema = z.object({
   n: z.number().int(),
-  /** null = all passed (eingepasst). */
+  dealerSeat: z.number().int(),
+  /** null = all passed (eingepasst — ticked in the sheet's last column). */
   declarerSeat: z.number().int().nullable(),
   label: z.string(),
-  value: z.number().int(),
+  /** Grundwert 9/10/11/12/24; null for null games and thrown-in deals. */
+  base: z.number().int().nullable(),
+  matWith: z.boolean().nullable(),
+  matCount: z.number().int().nullable(),
+  /** Gewinnstufen ticks (suit/grand only). */
+  stufen: z
+    .object({
+      hand: z.boolean(),
+      schneider: z.boolean(),
+      schneiderAnn: z.boolean(),
+      schwarz: z.boolean(),
+      schwarzAnn: z.boolean(),
+      ouvert: z.boolean(),
+    })
+    .nullable(),
   won: z.boolean().nullable(),
-  /** Signed Seeger score for the declarer (value+50 / -(2·value+50)). */
-  delta: z.number().int(),
-  /** Declarer's cumulative score after this row — the number written on a real list. */
+  /** Spielwert written in the + column (the game's value when won). */
+  plus: z.number().int(),
+  /** Spielwert written in the − column (doubled value when lost). */
+  minus: z.number().int(),
+  /** Declarer's cumulative pure score after this row. */
   cumAfter: z.number().int(),
 })
 
 export const skatTotalsSchema = z.object({
+  /** A: sum of the pure game points. */
   cum: z.number().int(),
   won: z.number().int(),
   lost: z.number().int(),
-  /** 40 × games lost by the other two players (Seeger-Fabian, 3-seat table). */
+  /** B: (won − lost) × 50. */
+  seegerBonus: z.number().int(),
+  /** C: 40 × games lost by the other two players (3-seat table). */
   defenderBonus: z.number().int(),
+  /** Endergebnis = A + B + C. */
   final: z.number().int(),
 })
 

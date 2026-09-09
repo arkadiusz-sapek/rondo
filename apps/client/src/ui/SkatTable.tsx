@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import {
   GRAND_BASE,
   SUIT_BASE,
@@ -374,14 +374,33 @@ function SeriesOverlay() {
 
 /* ---------------------------------- the list --------------------------------- */
 
+/**
+ * The Wettspielliste, laid out like the official DSkV sheet: Grundwert,
+ * Buben/Spitzen (mit/ohne), the six Gewinnstufen tick columns, Spielwerte
+ * +/−, one pure-cumulative column per player with gew./verl. tallies (the
+ * dealer's cell shaded, as on the print), the eingepasst column, and the
+ * A/B/C footer (points · ±50 per game · 40 per opponents' loss).
+ */
 function ScoreList({ onClose }: { onClose: () => void }) {
   const skat = useGame((state) => state.skat)!
   const rows = skat.list.rows
   const totals = skat.list.totals
+  const tick = '✗'
+  const stufenCols = [
+    { key: 'hand', label: 'Hand' },
+    { key: 'schneider', label: 'Schneider' },
+    { key: 'schneiderAnn', label: 'angesagt' },
+    { key: 'schwarz', label: 'Schwarz' },
+    { key: 'schwarzAnn', label: 'angesagt' },
+    { key: 'ouvert', label: 'offen' },
+  ] as const
+
   return (
     <div className="skat-list">
       <header>
-        <h3>Spielliste · game {Math.min(skat.gameNo, skat.seriesLength)}/{skat.seriesLength}</h3>
+        <h3>
+          Wettspielliste <small>Serie {Math.min(skat.gameNo, skat.seriesLength)}/{skat.seriesLength} · 3er-Tisch</small>
+        </h3>
         <button type="button" onClick={onClose}>
           ✕
         </button>
@@ -389,62 +408,158 @@ function ScoreList({ onClose }: { onClose: () => void }) {
       <div className="list-scroll">
         <table>
           <thead>
-            <tr>
-              <th className="num">Nr</th>
+            <tr className="names-row">
+              <th className="num" rowSpan={2}>
+                Nr
+              </th>
+              <th className="v" rowSpan={2}>
+                <span>Grundwert</span>
+              </th>
+              <th colSpan={2}>
+                Buben/
+                <br />
+                Spitzen
+              </th>
+              <th colSpan={6}>Gewinnstufen</th>
+              <th colSpan={2}>
+                Spiel-
+                <br />
+                werte
+              </th>
               {skat.seats.map((seat) => (
-                <th key={seat.seat}>{seat.nickname.replace(' 🤖', '')}</th>
+                <th key={seat.seat} colSpan={3} className="player-head">
+                  {seat.nickname.replace(' 🤖', '')}
+                </th>
               ))}
-              <th className="game-col">Spiel</th>
+              <th className="v" rowSpan={2}>
+                <span>eingepasst</span>
+              </th>
+            </tr>
+            <tr className="subhead">
+              <th className="v">
+                <span>mit</span>
+              </th>
+              <th className="v">
+                <span>ohne</span>
+              </th>
+              {stufenCols.map((col, index) => (
+                <th key={index} className="v">
+                  <span>{col.label}</span>
+                </th>
+              ))}
+              <th>+</th>
+              <th>−</th>
+              {skat.seats.map((seat) => (
+                <th key={seat.seat} colSpan={3} className="startnr">
+                  Platz {seat.seat + 1}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {Array.from({ length: skat.seriesLength }, (_, index) => {
               const row = rows[index]
+              const dealer = row ? row.dealerSeat : (index % 3 + 2) % 3
               return (
                 <tr key={index} className={row ? '' : 'empty'}>
                   <td className="num">{index + 1}</td>
-                  {skat.seats.map((seat) => (
-                    <td key={seat.seat} className={row && row.declarerSeat === seat.seat ? (row.won ? 'won' : 'lost') : ''}>
-                      {row && row.declarerSeat === seat.seat ? row.cumAfter : ''}
-                    </td>
+                  <td>{row?.base ?? ''}</td>
+                  <td>{row && row.matWith === true ? row.matCount : ''}</td>
+                  <td>{row && row.matWith === false ? row.matCount : ''}</td>
+                  {stufenCols.map((col, colIndex) => (
+                    <td key={colIndex}>{row?.stufen?.[col.key] ? tick : ''}</td>
                   ))}
-                  <td className="game-col">{row ? (row.declarerSeat === null ? '—' : `${row.label} ${row.value}`) : ''}</td>
+                  <td className="won">{row && row.plus > 0 ? row.plus : ''}</td>
+                  <td className="lost">{row && row.minus > 0 ? row.minus : ''}</td>
+                  {skat.seats.map((seat) => {
+                    const isDeclarer = row && row.declarerSeat === seat.seat
+                    return (
+                      <Fragment key={seat.seat}>
+                        <td className={`pcol ${seat.seat === dealer ? 'dealer' : ''} ${isDeclarer ? (row.won ? 'won' : 'lost') : ''}`}>
+                          {isDeclarer ? row.cumAfter : ''}
+                        </td>
+                        <td className="gv">{isDeclarer && row.won === true ? '❙' : ''}</td>
+                        <td className="gv">{isDeclarer && row.won === false ? '❙' : ''}</td>
+                      </Fragment>
+                    )
+                  })}
+                  <td>{row && row.declarerSeat === null ? tick : ''}</td>
                 </tr>
               )
             })}
           </tbody>
           <tfoot>
             <tr>
-              <td className="num">gew.</td>
+              <td className="foot-label" colSpan={12}>
+                A&ensp;Summe der Punkte und Spiele
+              </td>
               {totals.map((total, index) => (
-                <td key={index}>{total.won}</td>
+                <Fragment key={index}>
+                  <td className="pcol">{total.cum}</td>
+                  <td className="gv">{total.won}</td>
+                  <td className="gv">{total.lost}</td>
+                </Fragment>
               ))}
-              <td className="game-col" />
+              <td />
             </tr>
             <tr>
-              <td className="num">verl.</td>
+              <td className="foot-label" colSpan={12}>
+                B&ensp;+ (gewonnene − verlorene) × 50
+              </td>
               {totals.map((total, index) => (
-                <td key={index}>{total.lost}</td>
+                <Fragment key={index}>
+                  <td className="pcol">{total.seegerBonus}</td>
+                  <td className="gv" colSpan={2} />
+                </Fragment>
               ))}
-              <td className="game-col" />
+              <td />
             </tr>
             <tr>
-              <td className="num">+40</td>
+              <td className="foot-label" colSpan={12}>
+                C&ensp;+ verlorene Gegenspiele × 40
+              </td>
               {totals.map((total, index) => (
-                <td key={index}>{total.defenderBonus}</td>
+                <Fragment key={index}>
+                  <td className="pcol">{total.defenderBonus}</td>
+                  <td className="gv" colSpan={2} />
+                </Fragment>
               ))}
-              <td className="game-col" />
+              <td />
             </tr>
             <tr className="final">
-              <td className="num">Σ</td>
+              <td className="foot-label" colSpan={12}>
+                Endergebnis (A + B + C)
+              </td>
               {totals.map((total, index) => (
-                <td key={index}>{total.final}</td>
+                <Fragment key={index}>
+                  <td className="pcol">{total.final}</td>
+                  <td className="gv" colSpan={2} />
+                </Fragment>
               ))}
-              <td className="game-col" />
+              <td />
             </tr>
           </tfoot>
         </table>
       </div>
+    </div>
+  )
+}
+
+/** Always-on tournament glance: live Endergebnis per player. */
+function Standings() {
+  const skat = useGame((state) => state.skat)!
+  const ordered = skat.seats
+    .map((seat) => ({ seat, total: skat.list.totals[seat.seat] }))
+    .sort((a, b) => b.total.final - a.total.final)
+  return (
+    <div className="skat-standings">
+      {ordered.map(({ seat, total }, index) => (
+        <div key={seat.seat} className={seat.seat === skat.yourSeat ? 'me' : ''}>
+          <span className="pos">{index + 1}.</span>
+          <span className="nick">{seat.nickname.replace(' 🤖', '')}</span>
+          <span className="pts">{total.final}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -490,6 +605,7 @@ export function SkatTable() {
       <button type="button" className="skat-list-toggle" onClick={() => setListOpen((open) => !open)}>
         ≣ Liste
       </button>
+      <Standings />
       {listOpen && <ScoreList onClose={() => setListOpen(false)} />}
       <Toast />
     </div>

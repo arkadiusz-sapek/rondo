@@ -32,9 +32,17 @@ karty rysowane programowo jak w blackjacku.
   przegrana = −(2×wartość+50); po przegranej solisty każdy z obrońców +40
   (doliczane w stopce listy, jak na prawdziwych listach). Seria = **36 gier**
   (standard DSkV dla stołu 3-osobowego).
-- Lista wzorowana na Spielliste DSkV: kolumna skumulowanych punktów na wierszu
-  gry solisty + kreski gew./verl., stopka: liczby wygranych/przegranych,
-  40×przegrane pozostałych, wynik końcowy.
+- Lista = wierna kopia oficjalnej **Wettspielliste DSkV** (zweryfikowana na
+  oryginalnym PDF druku + Wikipedia Skatabrechnung + pagat — 3 źródła zgodne):
+  kolumny Grundwert / Buben-Spitzen (mit|ohne) / Gewinnstufen (Hand, Schneider,
+  angesagt, Schwarz, angesagt, offen) / Spielwerte (+|−) / na gracza: czysto
+  skumulowane punkty (wygrana +wartość, przegrana −2×wartość) + kreski
+  gew./verl., pole rozdającego szare, kolumna eingepasste Spiele. Premie
+  Seegera wyłącznie w stopce, jak na druku: **A** Summe der Punkte und Spiele,
+  **B** +(gewonnene−verlorene)×50, **C** +verlorene Gegenspiele×40 (3er-Tisch),
+  **Endergebnis = A+B+C**. Do tego stały mini-widżet ze standingiem (live
+  Endergebnis) w rogu stołu — pełna lista pod przyciskiem „≣ Liste" w każdej
+  fazie gry.
 
 ## Architektura
 

@@ -288,11 +288,16 @@ export class SkatEngine implements GameEngine {
   private eingepasst() {
     this.rows.push({
       n: this.gameNo,
+      dealerSeat: this.dealerSeat,
       declarerSeat: null,
       label: '—',
-      value: 0,
+      base: null,
+      matWith: null,
+      matCount: null,
+      stufen: null,
       won: null,
-      delta: 0,
+      plus: 0,
+      minus: 0,
       cumAfter: 0,
     })
     this.phase = 'settled'
@@ -427,17 +432,37 @@ export class SkatEngine implements GameEngine {
       totalTricks: 10,
     })
     const label = contractLabel(this.contract!)
+    // The printed list: pure game points in the column (+value / −2·value),
+    // every Seeger premium is footer arithmetic.
+    const plus = settle.won ? settle.value : 0
+    const minus = settle.won ? 0 : 2 * settle.value
     const cumBefore = this.rows
       .filter((row) => row.declarerSeat === declarer.seat)
-      .reduce((sum, row) => sum + row.delta, 0)
+      .reduce((sum, row) => sum + row.plus - row.minus, 0)
+    const contract = this.contract!
     this.rows.push({
       n: this.gameNo,
+      dealerSeat: this.dealerSeat,
       declarerSeat: declarer.seat,
       label,
-      value: settle.value,
+      base: contract.type === 'grand' ? GRAND_BASE : contract.type === 'suit' ? SUIT_BASE[contract.trump!] : null,
+      matWith: contract.type === 'null' ? null : settle.matadors.with,
+      matCount: contract.type === 'null' ? null : settle.matadors.count,
+      stufen:
+        contract.type === 'null'
+          ? null
+          : {
+              hand: contract.hand,
+              schneider: settle.achieved.schneider,
+              schneiderAnn: contract.schneiderAnnounced,
+              schwarz: settle.achieved.schwarz,
+              schwarzAnn: contract.schwarzAnnounced,
+              ouvert: contract.ouvert,
+            },
       won: settle.won,
-      delta: settle.declarerScore,
-      cumAfter: cumBefore + settle.declarerScore,
+      plus,
+      minus,
+      cumAfter: cumBefore + plus - minus,
     })
     this.result = {
       declarerSeat: declarer.seat,
@@ -610,16 +635,19 @@ export class SkatEngine implements GameEngine {
     }
   }
 
+  /** Footer of the DSkV sheet: A = pure points, B = (won−lost)×50, C = 40×others' losses. */
   private totals(): SkatTotals[] {
     return [0, 1, 2].map((seat) => {
       const mine = this.rows.filter((row) => row.declarerSeat === seat)
-      const cum = mine.reduce((sum, row) => sum + row.delta, 0)
+      const cum = mine.reduce((sum, row) => sum + row.plus - row.minus, 0)
       const won = mine.filter((row) => row.won === true).length
       const lost = mine.filter((row) => row.won === false).length
       const othersLost = this.rows.filter(
         (row) => row.declarerSeat !== null && row.declarerSeat !== seat && row.won === false,
       ).length
-      return { cum, won, lost, defenderBonus: 40 * othersLost, final: cum + 40 * othersLost }
+      const seegerBonus = (won - lost) * 50
+      const defenderBonus = 40 * othersLost
+      return { cum, won, lost, seegerBonus, defenderBonus, final: cum + seegerBonus + defenderBonus }
     })
   }
 
